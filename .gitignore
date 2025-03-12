@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# shadcn/ui temporary files
+.components.tmp.*
+
+# Any file that marked as .old
+**.old
