@@ -20,11 +20,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-interface Option {
-  value: string
-  label: string
-}
-
 interface BusinessHourPeriod {
   open: string
   close: string

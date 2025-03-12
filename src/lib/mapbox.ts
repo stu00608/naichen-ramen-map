@@ -1,5 +1,4 @@
 // src/lib/mapbox.ts
-import { GeoPoint } from 'firebase/firestore';
 import { Shop } from '@/types';
 
 // 定義Mapbox樣式URL

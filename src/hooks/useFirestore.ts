@@ -14,7 +14,6 @@ import {
   limit,
   QueryConstraint,
   serverTimestamp,
-  DocumentData
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
