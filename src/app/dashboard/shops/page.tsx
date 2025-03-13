@@ -1,8 +1,21 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import Link from "next/link"
-import { collection, query, orderBy, getDocs, limit, startAfter } from "firebase/firestore"
+import { 
+  collection, 
+  query, 
+  orderBy, 
+  getDocs, 
+  limit, 
+  startAfter, 
+  where, 
+  doc, 
+  getDoc,
+  setDoc,
+  increment,
+  runTransaction
+} from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { Shop } from "@/types"
 import { useFirestore } from "@/hooks/useFirestore"
@@ -43,6 +56,8 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination"
+import { Input } from "@/components/ui/input"
+import { Search, X } from "lucide-react"
 
 export default function ShopsPage() {
   const [shops, setShops] = useState<Shop[]>([])
@@ -55,56 +70,159 @@ export default function ShopsPage() {
   const [lastVisible, setLastVisible] = useState<any>(null)
   const [firstVisible, setFirstVisible] = useState<any>(null)
   const [pageSnapshots, setPageSnapshots] = useState<any[]>([])
+  const [searchTerm, setSearchTerm] = useState("")
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    const fetchShops = async () => {
-      try {
-        setLoading(true)
-        // Get total count
-        const totalQuery = query(collection(db, "shops"))
-        const totalSnapshot = await getDocs(totalQuery)
-        setTotalShops(totalSnapshot.size)
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm)
+    }, 300)
 
-        // Get first page
-        const q = query(
-          collection(db, "shops"),
-          orderBy("created_at", "desc"),
-          limit(itemsPerPage)
-        )
-        const querySnapshot = await getDocs(q)
-        
-        const shopsData: Shop[] = []
-        querySnapshot.forEach((doc) => {
-          shopsData.push({ id: doc.id, ...doc.data() } as Shop)
-        })
-        
-        setShops(shopsData)
-        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1])
-        setFirstVisible(querySnapshot.docs[0])
-        setPageSnapshots([querySnapshot.docs[0]])
-      } catch (error) {
-        console.error("Error fetching shops:", error)
-      } finally {
-        setLoading(false)
+    return () => clearTimeout(timer)
+  }, [searchTerm])
+
+  // Add keyboard shortcut for search
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.key === "/" && !["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName)) {
+        e.preventDefault()
+        searchInputRef.current?.focus()
       }
     }
 
-    fetchShops()
-  }, [itemsPerPage])
+    document.addEventListener("keydown", handleKeyPress)
+    return () => document.removeEventListener("keydown", handleKeyPress)
+  }, [])
+
+  const handlePageClick = async (page: number) => {
+    if (page === currentPage) return
+    
+    try {
+      setLoading(true)
+      const baseQuery = collection(db, "shops")
+      
+      let q
+      if (debouncedSearchTerm) {
+        const searchLower = debouncedSearchTerm.toLowerCase()
+        q = query(
+          baseQuery,
+          where("searchTokens", "array-contains", searchLower),
+          orderBy("created_at", "desc"),
+          startAfter(pageSnapshots[page - 1]),
+          limit(itemsPerPage)
+        )
+      } else {
+        q = query(
+          baseQuery,
+          orderBy("created_at", "desc"),
+          startAfter(pageSnapshots[page - 1]),
+          limit(itemsPerPage)
+        )
+      }
+
+      const querySnapshot = await getDocs(q)
+      const shopsData: Shop[] = []
+      querySnapshot.forEach((doc) => {
+        shopsData.push({ id: doc.id, ...doc.data() } as Shop)
+      })
+
+      setShops(shopsData)
+      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1])
+      setFirstVisible(querySnapshot.docs[0])
+      setCurrentPage(page)
+    } catch (error) {
+      console.error("Error fetching page:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchShops = async (searchTerm = "") => {
+    try {
+      setLoading(true)
+      const baseQuery = collection(db, "shops")
+      
+      // Create query based on search term
+      let q
+      if (searchTerm) {
+        const searchLower = searchTerm.toLowerCase()
+        // Use searchTokens for more flexible matching
+        q = query(
+          baseQuery,
+          where("searchTokens", "array-contains", searchLower),
+          orderBy("created_at", "desc"),
+          limit(itemsPerPage)
+        )
+      } else {
+        q = query(
+          baseQuery,
+          orderBy("created_at", "desc"),
+          limit(itemsPerPage)
+        )
+      }
+
+      // Get total count
+      let total
+      if (searchTerm) {
+        const countQuery = query(
+          baseQuery,
+          where("searchTokens", "array-contains", searchTerm.toLowerCase())
+        )
+        const snapshot = await getDocs(countQuery)
+        total = snapshot.size
+      } else {
+        const statsDoc = doc(db, 'stats', 'shops')
+        const statsSnapshot = await getDoc(statsDoc)
+        total = statsSnapshot.exists() ? statsSnapshot.data()?.totalShops || 0 : 0
+      }
+      setTotalShops(total)
+
+      // Get paginated results
+      const querySnapshot = await getDocs(q)
+      const shopsData: Shop[] = []
+      querySnapshot.forEach((doc) => {
+        shopsData.push({ id: doc.id, ...doc.data() } as Shop)
+      })
+      
+      setShops(shopsData)
+      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1])
+      setFirstVisible(querySnapshot.docs[0])
+      setPageSnapshots([querySnapshot.docs[0]])
+    } catch (error) {
+      console.error("Error fetching shops:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleNextPage = async () => {
-    if (!lastVisible) return
+    if (!lastVisible || currentPage >= Math.ceil(totalShops / itemsPerPage)) return
 
     try {
       setLoading(true)
-      const q = query(
-        collection(db, "shops"),
-        orderBy("created_at", "desc"),
-        startAfter(lastVisible),
-        limit(itemsPerPage)
-      )
-      const querySnapshot = await getDocs(q)
+      const baseQuery = collection(db, "shops")
+      
+      let q
+      if (debouncedSearchTerm) {
+        const searchLower = debouncedSearchTerm.toLowerCase()
+        q = query(
+          baseQuery,
+          where("searchTokens", "array-contains", searchLower),
+          orderBy("created_at", "desc"),
+          startAfter(lastVisible),
+          limit(itemsPerPage)
+        )
+      } else {
+        q = query(
+          baseQuery,
+          orderBy("created_at", "desc"),
+          startAfter(lastVisible),
+          limit(itemsPerPage)
+        )
+      }
 
+      const querySnapshot = await getDocs(q)
       const shopsData: Shop[] = []
       querySnapshot.forEach((doc) => {
         shopsData.push({ id: doc.id, ...doc.data() } as Shop)
@@ -127,14 +245,28 @@ export default function ShopsPage() {
 
     try {
       setLoading(true)
-      const q = query(
-        collection(db, "shops"),
-        orderBy("created_at", "desc"),
-        startAfter(pageSnapshots[currentPage - 2]),
-        limit(itemsPerPage)
-      )
-      const querySnapshot = await getDocs(q)
+      const baseQuery = collection(db, "shops")
+      
+      let q
+      if (debouncedSearchTerm) {
+        const searchLower = debouncedSearchTerm.toLowerCase()
+        q = query(
+          baseQuery,
+          where("searchTokens", "array-contains", searchLower),
+          orderBy("created_at", "desc"),
+          startAfter(pageSnapshots[currentPage - 2]),
+          limit(itemsPerPage)
+        )
+      } else {
+        q = query(
+          baseQuery,
+          orderBy("created_at", "desc"),
+          startAfter(pageSnapshots[currentPage - 2]),
+          limit(itemsPerPage)
+        )
+      }
 
+      const querySnapshot = await getDocs(q)
       const shopsData: Shop[] = []
       querySnapshot.forEach((doc) => {
         shopsData.push({ id: doc.id, ...doc.data() } as Shop)
@@ -151,71 +283,68 @@ export default function ShopsPage() {
     }
   }
 
+  // Fetch shops when search term or page changes
+  useEffect(() => {
+    fetchShops(debouncedSearchTerm)
+  }, [debouncedSearchTerm, currentPage, itemsPerPage])
+
+  const clearSearch = () => {
+    setSearchTerm("")
+    setCurrentPage(1)
+  }
+
   const handleDelete = async () => {
     if (!shopToDelete) return
 
-    const success = await deleteDocument(shopToDelete)
-    if (success) {
-      setShops(shops.filter(shop => shop.id !== shopToDelete))
-      setTotalShops(prev => prev - 1)
+    try {
+      await runTransaction(db, async (transaction) => {
+        // Delete the shop
+        const success = await deleteDocument(shopToDelete)
+        if (success) {
+          // Update the counter
+          const statsDoc = doc(db, 'stats', 'shops')
+          transaction.update(statsDoc, {
+            totalShops: increment(-1)
+          })
+          
+          setShops(shops.filter(shop => shop.id !== shopToDelete))
+          setTotalShops(prev => prev - 1)
+        }
+      })
+    } catch (error) {
+      console.error("Error deleting shop:", error)
     }
     setShopToDelete(null)
-  }
-
-  const handlePageClick = async (page: number) => {
-    if (page === currentPage) return
-    
-    try {
-      setLoading(true)
-      let q;
-      
-      if (page > currentPage) {
-        // Going forward
-        q = query(
-          collection(db, "shops"),
-          orderBy("created_at", "desc"),
-          startAfter(lastVisible),
-          limit(itemsPerPage)
-        )
-      } else {
-        // Going backward
-        q = query(
-          collection(db, "shops"),
-          orderBy("created_at", "desc"),
-          startAfter(pageSnapshots[page - 1]),
-          limit(itemsPerPage)
-        )
-      }
-      
-      const querySnapshot = await getDocs(q)
-      const shopsData: Shop[] = []
-      querySnapshot.forEach((doc) => {
-        shopsData.push({ id: doc.id, ...doc.data() } as Shop)
-      })
-
-      setShops(shopsData)
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1])
-      setFirstVisible(querySnapshot.docs[0])
-      setCurrentPage(page)
-      
-      // Update page snapshots if going forward
-      if (page > currentPage) {
-        setPageSnapshots(prev => [...prev, querySnapshot.docs[0]])
-      }
-    } catch (error) {
-      console.error("Error fetching page:", error)
-    } finally {
-      setLoading(false)
-    }
   }
 
   const totalPages = Math.ceil(totalShops / itemsPerPage)
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6 mt-4 max-h-[30px]">
-        <h1 className="text-2xl font-bold">店家管理</h1>
-        <Button asChild>
+      <div className="flex items-center gap-4 mb-6 mt-4">
+        <h1 className="text-2xl font-bold whitespace-nowrap">店家管理</h1>
+        <div className="relative flex-1 max-w-xl mx-auto">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            ref={searchInputRef}
+            placeholder='搜尋店家名稱... (按 "/" 快速搜尋)'
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value)
+              setCurrentPage(1)
+            }}
+            className="pl-8 pr-8"
+          />
+          {searchTerm && (
+            <button
+              onClick={clearSearch}
+              className="absolute right-2 top-2.5 h-4 w-4 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <Button asChild className="whitespace-nowrap">
           <Link href="/dashboard/shops/new">新增店家</Link>
         </Button>
       </div>
@@ -226,7 +355,9 @@ export default function ShopsPage() {
         </div>
       ) : shops.length === 0 ? (
         <div className="bg-card rounded-lg p-6 text-center">
-          <p className="text-muted-foreground">尚未有店家資料。點擊「新增店家」開始添加。</p>
+          <p className="text-muted-foreground">
+            {searchTerm ? "沒有符合搜尋條件的店家。" : "尚未有店家資料。點擊「新增店家」開始添加。"}
+          </p>
         </div>
       ) : (
         <div className="space-y-4">
