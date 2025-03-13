@@ -22,6 +22,8 @@ export function SignUpForm({
 }: React.ComponentPropsWithoutRef<"div">) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [passwordConfirm, setPasswordConfirm] = useState("")
+  const [displayName, setDisplayName] = useState("")
   const [inviteCode, setInviteCode] = useState("")
   const [error, setError] = useState("")
   const { signUp, signUpWithGoogle, isLoading } = useAuth()
@@ -31,14 +33,24 @@ export function SignUpForm({
     e.preventDefault()
     setError("")
 
-    if (!email || !password || !inviteCode) {
+    if (!email || !password || !passwordConfirm || !inviteCode || !displayName) {
       setError("請填寫所有必填欄位")
       return
     }
 
+    if (password !== passwordConfirm) {
+      setError("密碼不一致")
+      return
+    }
+
+    if (password.length < 6) {
+      setError("密碼長度至少需要 6 個字元")
+      return
+    }
+
     try {
-      await signUp(email, password, inviteCode)
-      router.push("/dashboard/shops")
+      await signUp(email, password, inviteCode, displayName)
+      router.push("/verify-email")
     } catch (err) {
       setError(err instanceof Error ? err.message : "註冊失敗")
     }
@@ -61,7 +73,7 @@ export function SignUpForm({
   }
 
   return (
-    <div className={cn("flex flex-col gap-6", className)} {...props}>
+    <div className={cn("flex flex-col gap-6 w-[400px]", className)} {...props}>
       <Card>
         <CardHeader>
           <CardTitle className="text-2xl">奶辰拉麵地圖・註冊</CardTitle>
@@ -93,8 +105,31 @@ export function SignUpForm({
                 <Input
                   id="password"
                   type="password"
+                  placeholder="至少 6 個字元"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="password-confirm">確認密碼</Label>
+                <Input
+                  id="password-confirm"
+                  type="password"
+                  placeholder="再次輸入密碼"
+                  value={passwordConfirm}
+                  onChange={(e) => setPasswordConfirm(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="display-name">名稱</Label>
+                <Input
+                  id="display-name"
+                  type="text"
+                  placeholder="您的名稱"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
                   required
                 />
               </div>

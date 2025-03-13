@@ -8,11 +8,18 @@ import {
   GoogleAuthProvider,
   signOut as firebaseSignOut,
   onAuthStateChanged,
-  User as FirebaseUser
+  User as FirebaseUser,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  updateProfile,
+  linkWithPopup,
+  fetchSignInMethodsForEmail,
+  AuthErrorCodes,
+  unlink,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
-import { AuthContextType, UserProfile, InviteCode } from '@/types/auth';
+import { AuthContextType, UserProfile, InviteCode, AuthMethod } from '@/types/auth';
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
@@ -27,12 +34,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          const userRef = doc(db, 'users', firebaseUser.uid);
+          const userDoc = await getDoc(userRef);
+          
           if (userDoc.exists()) {
-            setUser(userDoc.data() as UserProfile);
+            const userData = userDoc.data() as UserProfile;
+            
+            // Update Firestore if email verification status has changed
+            if (userData.emailVerified !== firebaseUser.emailVerified) {
+              await updateDoc(userRef, {
+                emailVerified: firebaseUser.emailVerified,
+                updatedAt: new Date()
+              });
+
+              // If email is newly verified, mark the invite code as used
+              if (firebaseUser.emailVerified && userData.inviteCode) {
+                const inviteCodeRef = doc(db, 'inviteCodes', userData.inviteCode);
+                await updateDoc(inviteCodeRef, {
+                  isUsed: true,
+                  usedBy: firebaseUser.uid,
+                  usedAt: new Date()
+                });
+              }
+            }
+            
+            // Set email verification cookie
+            document.cookie = `emailVerified=${firebaseUser.emailVerified}; path=/`;
+            
+            setUser({
+              ...userData,
+              emailVerified: firebaseUser.emailVerified
+            });
           }
         } else {
           setUser(null);
+          // Remove email verification cookie
+          document.cookie = 'emailVerified=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT';
         }
       } catch (err) {
         console.error('Auth state change error:', err);
@@ -58,38 +95,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } as InviteCode;
   };
 
-  const createUserProfile = async (firebaseUser: FirebaseUser, inviteCode: InviteCode) => {
-    const userProfile: UserProfile = {
-      uid: firebaseUser.uid,
-      email: firebaseUser.email!,
-      name: firebaseUser.displayName || firebaseUser.email!.split('@')[0],
-      avatar: firebaseUser.photoURL || '',
-      role: 'NORMAL',
-      createdAt: new Date(),
+  const createUserProfile = async (
+    firebaseUser: FirebaseUser,
+    displayName?: string | null,
+    inviteCodeId?: string,
+    authMethod: AuthMethod = 'password'
+  ): Promise<UserProfile> => {
+    const userRef = doc(db, "users", firebaseUser.uid)
+    const userSnap = await getDoc(userRef)
+
+    if (!userSnap.exists()) {
+      const userData: UserProfile = {
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        name: displayName || firebaseUser.displayName || null,
+        displayName: displayName || firebaseUser.displayName || null,
+        avatar: firebaseUser.photoURL,
+        role: 'NORMAL',
+        isAdmin: false,
+        emailVerified: firebaseUser.emailVerified,
+        inviteCode: inviteCodeId,
+        authMethod,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      await setDoc(userRef, userData)
+      return userData
+    }
+
+    const existingData = userSnap.data() as UserProfile
+    const updatedData: UserProfile = {
+      ...existingData,
+      email: firebaseUser.email,
+      displayName: displayName || firebaseUser.displayName || existingData.displayName || null,
+      avatar: firebaseUser.photoURL || existingData.avatar,
+      emailVerified: firebaseUser.emailVerified,
       updatedAt: new Date(),
-    };
+    }
 
-    await setDoc(doc(db, 'users', firebaseUser.uid), userProfile);
-    
-    // Mark invite code as used
-    await setDoc(doc(db, 'inviteCodes', inviteCode.id), {
-      ...inviteCode,
-      isUsed: true,
-      usedBy: firebaseUser.uid,
-      usedAt: new Date(),
-    });
-
-    return userProfile;
+    await setDoc(userRef, updatedData, { merge: true })
+    return updatedData
   };
 
   const signIn = async (email: string, password: string) => {
     try {
       setError(null);
+      
+      // Check sign-in methods for this email first
+      const methods = await fetchSignInMethodsForEmail(auth, email);
+      
+      // If user has Google sign-in method, guide them to use it
+      if (methods.includes('google.com')) {
+        throw new Error('此帳號已使用 Google 登入。請點擊「使用 Google 登入」按鈕。');
+      }
+      
       const { user: firebaseUser } = await signInWithEmailAndPassword(auth, email, password);
       const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
       
       if (userDoc.exists()) {
-        setUser(userDoc.data() as UserProfile);
+        const userData = userDoc.data() as UserProfile;
+        
+        // Double check if this account should use Google auth
+        if (userData.authMethod === 'google') {
+          throw new Error('此帳號已使用 Google 登入。請點擊「使用 Google 登入」按鈕。');
+        }
+
+        setUser({
+          ...userData,
+          emailVerified: firebaseUser.emailVerified
+        });
       } else {
         throw new Error('User not found. Please sign up first.');
       }
@@ -103,29 +178,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setError(null);
       const provider = new GoogleAuthProvider();
+      
       const { user: firebaseUser } = await signInWithPopup(auth, provider);
       const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
       
       if (userDoc.exists()) {
-        setUser(userDoc.data() as UserProfile);
+        const userData = userDoc.data() as UserProfile;
+        
+        // If user exists but was created with password, prevent Google sign-in
+        if (userData.authMethod === 'password') {
+          throw new Error('此帳號已使用密碼註冊。請使用密碼登入。');
+        }
+        
+        setUser({
+          ...userData,
+          emailVerified: firebaseUser.emailVerified
+        });
       } else {
-        throw new Error('User not found. Please sign up first.');
+        // Check if email is already used with password auth
+        const methods = await fetchSignInMethodsForEmail(auth, firebaseUser.email!);
+        if (methods.includes('password')) {
+          throw new Error('此電子郵件已使用密碼註冊。請使用密碼登入。');
+        }
+        
+        // New user attempting to sign in with Google
+        // Instead of throwing an error, we'll throw a special error that the UI can handle
+        throw new Error('NEEDS_INVITE_CODE');
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred during Google sign in');
+    } catch (err: any) {
+      // Handle the case where email exists but with different auth method
+      if (err.code === 'auth/account-exists-with-different-credential') {
+        const email = err.customData?.email;
+        if (email) {
+          // Get sign in methods for this email
+          const methods = await fetchSignInMethodsForEmail(auth, email);
+          throw new Error(`此電子郵件已使用${methods.includes('password') ? '密碼' : '其他'}方式註冊。請使用該方式登入。`);
+        }
+      }
       throw err;
     }
   };
 
-  const signUp = async (email: string, password: string, inviteCode: string) => {
+  const signUp = async (email: string, password: string, inviteCode: string, displayName: string) => {
     try {
       setError(null);
       const validInviteCode = await validateInviteCode(inviteCode);
-      
+        
       const { user: firebaseUser } = await createUserWithEmailAndPassword(auth, email, password);
-      const userProfile = await createUserProfile(firebaseUser, validInviteCode);
-      setUser(userProfile);
-    } catch (err) {
+      
+      // Store the invite code ID in the user profile for later use
+      const userProfile = await createUserProfile(firebaseUser, displayName, validInviteCode.id, 'password');
+      
+      // Send email verification
+      await sendEmailVerification(firebaseUser);
+      
+      setUser({
+        ...userProfile,
+        emailVerified: firebaseUser.emailVerified
+      });
+    } catch (err: any) {
+      // Special handling for email-already-in-use error
+      if (err.code === AuthErrorCodes.EMAIL_EXISTS) {
+        setError('此電子郵件已註冊，或者請嘗試用相同Google帳號註冊');
+        throw new Error('此電子郵件已註冊，或者請嘗試用相同Google帳號註冊');
+      }
       setError(err instanceof Error ? err.message : 'An error occurred during sign up');
       throw err;
     }
@@ -141,15 +257,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
       
       if (!userDoc.exists()) {
-        const userProfile = await createUserProfile(firebaseUser, validInviteCode);
-        setUser(userProfile);
+        const userProfile = await createUserProfile(
+          firebaseUser,
+          firebaseUser.displayName,
+          validInviteCode.id,
+          'google'
+        );
+
+        // Mark invite code as used immediately since Google accounts are pre-verified
+        await updateDoc(doc(db, 'inviteCodes', validInviteCode.id), {
+          isUsed: true,
+          usedBy: firebaseUser.uid,
+          usedAt: new Date()
+        });
+
+        setUser({
+          ...userProfile,
+          emailVerified: firebaseUser.emailVerified
+        });
       } else {
-        throw new Error('User already exists. Please sign in instead.');
+        throw new Error('已存在之使用者，請直接登入');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred during Google sign up');
       throw err;
     }
+  };
+
+  const updateUserProfile = async (displayName: string): Promise<void> => {
+    if (!auth.currentUser) throw new Error("No user logged in")
+
+    await updateProfile(auth.currentUser, { displayName })
+    const updatedProfile = await createUserProfile(auth.currentUser, displayName)
+    setUser(updatedProfile)
+  };
+
+  const sendPasswordReset = async (email: string): Promise<void> => {
+    await sendPasswordResetEmail(auth, email)
   };
 
   const signOut = async () => {
@@ -158,6 +302,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred during sign out');
+      throw err;
+    }
+  };
+
+  const linkGoogleAccount = async () => {
+    if (!auth.currentUser) {
+      throw new Error('No user is currently signed in');
+    }
+
+    if (!auth.currentUser.email) {
+      throw new Error('Current user has no email address');
+    }
+
+    try {
+      setError(null);
+      const provider = new GoogleAuthProvider();
+      
+      try {
+        // Get the Google account email before linking
+        const result = await signInWithPopup(auth, provider);
+        
+        // Verify email matches
+        if (result.user.email !== auth.currentUser.email) {
+          throw new Error('Google 帳號的電子郵件必須與目前帳號相同');
+        }
+
+        // Update user profile with Google info and auth method
+        await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+          avatar: result.user.photoURL,
+          authMethod: 'google',
+          updatedAt: new Date()
+        });
+
+        // Update local user state
+        if (user) {
+          setUser({
+            ...user,
+            avatar: result.user.photoURL,
+            authMethod: 'google'
+          });
+        }
+
+        return true;
+      } catch (err: any) {
+        // Handle the case where the Google account is already linked to another account
+        if (err.code === 'auth/credential-already-in-use') {
+          throw new Error('此 Google 帳號已連結至其他帳號');
+        }
+        throw err;
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred while linking Google account');
       throw err;
     }
   };
@@ -174,6 +370,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signUp,
         signUpWithGoogle,
         signOut,
+        updateUserProfile,
+        sendPasswordReset,
+        linkGoogleAccount,
       }}
     >
       {children}

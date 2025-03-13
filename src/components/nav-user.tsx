@@ -4,6 +4,7 @@ import {
   ChevronsUpDown,
   LogOut,
   CircleUser,
+  Shield,
 } from "lucide-react"
 
 import {
@@ -26,21 +27,17 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
+import { Badge } from "@/components/ui/badge"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
+import type { UserProfile } from "@/types/auth"
 
-export function NavUser({
-  user,
-}: {
-  user: {
-    name: string
-    email: string
-    avatar: string
-  }
-}) {
+export function NavUser() {
   const { isMobile } = useSidebar()
   const router = useRouter()
-  const { signOut } = useAuth()
+  const { user, signOut } = useAuth()
+
+  if (!user) return null
 
   const handleSignOut = async () => {
     try {
@@ -49,6 +46,11 @@ export function NavUser({
     } catch (error) {
       console.error('Sign out error:', error)
     }
+  }
+
+  const getInitials = (name: string | null) => {
+    if (!name) return 'U'
+    return name.split(' ').map(n => n[0]).join('').toUpperCase()
   }
 
   return (
@@ -61,11 +63,19 @@ export function NavUser({
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarImage src={user.avatar} alt={user.name} />
-                <AvatarFallback className="rounded-lg">CN</AvatarFallback>
+                <AvatarImage src={user.avatar || ''} alt={user.displayName || ''} />
+                <AvatarFallback className="rounded-lg">{getInitials(user.displayName)}</AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">{user.name}</span>
+                <div className="flex items-center gap-2">
+                  <span className="truncate font-medium">{user.displayName || '未設定名稱'}</span>
+                  {user.role === 'ADMIN' && (
+                    <Badge variant="default" className="h-4 px-1 text-[0.5rem]">
+                      <Shield className="h-3 w-3" />
+                      管理員
+                    </Badge>
+                  )}
+                </div>
                 <span className="truncate text-xs">{user.email}</span>
               </div>
               <ChevronsUpDown className="ml-auto size-4" />
@@ -80,11 +90,19 @@ export function NavUser({
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="rounded-lg">CN</AvatarFallback>
+                  <AvatarImage src={user.avatar || ''} alt={user.displayName || ''} />
+                  <AvatarFallback className="rounded-lg">{getInitials(user.displayName)}</AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{user.name}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="truncate font-medium">{user.displayName || '未設定名稱'}</span>
+                    {user.role === 'ADMIN' && (
+                      <Badge variant="default" className="h-4 px-1 text-[0.5rem]">
+                        <Shield className="h-3 w-3" />
+                        管理員
+                      </Badge>
+                    )}
+                  </div>
                   <span className="truncate text-xs">{user.email}</span>
                 </div>
               </div>
@@ -92,13 +110,13 @@ export function NavUser({
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem onClick={() => router.push('/dashboard/settings')}>
-                <CircleUser />
+                <CircleUser className="mr-2 h-4 w-4" />
                 帳號設定
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleSignOut}>
-              <LogOut/>
+              <LogOut className="mr-2 h-4 w-4" />
               登出
             </DropdownMenuItem>
           </DropdownMenuContent>
