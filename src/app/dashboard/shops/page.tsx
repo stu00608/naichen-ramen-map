@@ -5,6 +5,7 @@ import Link from "next/link"
 import { collection, query, orderBy, getDocs } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import { Shop } from "@/types"
+import { useFirestore } from "@/hooks/useFirestore"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -15,10 +16,23 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 export default function ShopsPage() {
   const [shops, setShops] = useState<Shop[]>([])
   const [loading, setLoading] = useState(true)
+  const { deleteDocument } = useFirestore("shops")
+  const [shopToDelete, setShopToDelete] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchShops = async () => {
@@ -41,6 +55,16 @@ export default function ShopsPage() {
 
     fetchShops()
   }, [])
+
+  const handleDelete = async () => {
+    if (!shopToDelete) return
+
+    const success = await deleteDocument(shopToDelete)
+    if (success) {
+      setShops(shops.filter(shop => shop.id !== shopToDelete))
+    }
+    setShopToDelete(null)
+  }
 
   return (
     <div>
@@ -99,9 +123,37 @@ export default function ShopsPage() {
                     <Button variant="ghost" asChild className="mr-2">
                       <Link href={`/dashboard/shops/${shop.id}`}>編輯</Link>
                     </Button>
-                    <Button variant="ghost" asChild>
+                    <Button variant="ghost" asChild className="mr-2">
                       <Link href={`/dashboard/reviews/new?shopId=${shop.id}`}>新增評價</Link>
                     </Button>
+                    <AlertDialog open={shopToDelete === shop.id} onOpenChange={(open) => !open && setShopToDelete(null)}>
+                      <AlertDialogTrigger asChild>
+                        <Button 
+                          variant="ghost" 
+                          className="text-destructive hover:text-destructive/90"
+                          onClick={() => setShopToDelete(shop.id || null)}
+                        >
+                          刪除
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>確定要刪除此店家嗎？</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            此操作無法復原。所有與此店家相關的資料都將被永久刪除。
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel onClick={() => setShopToDelete(null)}>取消</AlertDialogCancel>
+                          <AlertDialogAction 
+                            onClick={handleDelete}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            確定刪除
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </TableCell>
                 </TableRow>
               ))}
