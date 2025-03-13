@@ -53,7 +53,7 @@ interface ShopEditFormProps {
 export default function ShopEditForm({ shopId }: ShopEditFormProps) {
   const { getDocument, updateDocument, deleteDocument, loading, error } = useFirestore("shops")
   const validateGooglePlaceId = useGooglePlaceIdValidation(shopId)
-  const { getDefaultBusinessHours, formatFormDataForSubmission, addPeriod, removePeriod, geocodeAddress } = useShopFormUtils()
+  const { getDefaultBusinessHours, formatFormDataForSubmission, addPeriod, removePeriod, geocodeAddress, prepareShopSearchFields } = useShopFormUtils()
   const [geoError, setGeoError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const router = useRouter()
@@ -278,11 +278,14 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
       }
       
       const formattedData = formatFormDataForSubmission(data, excludeBusinessHours)
+      const { name_lower, searchTokens } = prepareShopSearchFields(data.name)
       const shopData = {
         ...formattedData,
         updated_at: Timestamp.now(),
         location: locationRef.current || new GeoPoint(0, 0),
-        googleMapsUri: googleMapsUriRef.current
+        googleMapsUri: googleMapsUriRef.current,
+        name_lower,
+        searchTokens
       }
       
       const success = await updateDocument(shopId, shopData)

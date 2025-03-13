@@ -37,7 +37,7 @@ interface DaySchedule {
 export default function NewShopPage() {
   const { addDocument, loading, error, checkDocumentExists } = useFirestore("shops")
   const validateGooglePlaceId = useGooglePlaceIdValidation()
-  const { getDefaultBusinessHours, formatFormDataForSubmission, addPeriod, removePeriod, geocodeAddress } = useShopFormUtils()
+  const { getDefaultBusinessHours, formatFormDataForSubmission, addPeriod, removePeriod, geocodeAddress, prepareShopSearchFields } = useShopFormUtils()
   const [geoError, setGeoError] = useState<string | null>(null)
   const router = useRouter()
   const [selectedCountry, setSelectedCountry] = useState<keyof typeof REGIONS>("JP")
@@ -235,12 +235,15 @@ export default function NewShopPage() {
       }
       
       const formattedData = formatFormDataForSubmission(data, excludeBusinessHours)
+      const { name_lower, searchTokens } = prepareShopSearchFields(data.name)
       const shopData = {
         ...formattedData,
         created_at: Timestamp.now(),
         updated_at: Timestamp.now(),
         location: locationRef.current || new GeoPoint(0, 0),
-        googleMapsUri: googleMapsUriRef.current
+        googleMapsUri: googleMapsUriRef.current,
+        name_lower,
+        searchTokens
       }
       
       const result = await addDocument(shopData)

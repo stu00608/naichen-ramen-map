@@ -2,6 +2,7 @@ import { z } from "zod"
 import { DAYS_OF_WEEK } from "@/constants"
 import { GeoPoint } from 'firebase/firestore'
 import { Tag } from 'emblor'
+import { generateSearchTokens } from "@/lib/utils"
 
 // Shared types
 export interface BusinessHourPeriod {
@@ -148,11 +149,19 @@ export const useShopFormUtils = () => {
     }
   }
 
+  const prepareShopSearchFields = (name: string) => {
+    return {
+      name_lower: name.toLowerCase(),
+      searchTokens: generateSearchTokens(name)
+    }
+  }
+
   return {
     getDefaultBusinessHours,
     formatFormDataForSubmission,
     addPeriod,
     removePeriod,
-    geocodeAddress
+    geocodeAddress,
+    prepareShopSearchFields
   }
 } 

@@ -57,7 +57,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination"
 import { Input } from "@/components/ui/input"
-import { Search, X } from "lucide-react"
+import { Search, X, RefreshCw } from "lucide-react"
 
 export default function ShopsPage() {
   const [shops, setShops] = useState<Shop[]>([])
@@ -73,6 +73,7 @@ export default function ShopsPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const [verifying, setVerifying] = useState(false)
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -319,6 +320,44 @@ export default function ShopsPage() {
 
   const totalPages = Math.ceil(totalShops / itemsPerPage)
 
+  const verifyShopsCounter = async () => {
+    try {
+      setVerifying(true)
+      
+      // Get actual count
+      const shopsRef = collection(db, "shops")
+      const snapshot = await getDocs(shopsRef)
+      const actualCount = snapshot.size
+
+      // Get stored count
+      const statsRef = doc(db, "stats", "shops")
+      const statsDoc = await getDoc(statsRef)
+      const storedCount = statsDoc.exists() ? statsDoc.data()?.totalShops || 0 : 0
+
+      if (actualCount !== storedCount) {
+        // Update the counter
+        await setDoc(statsRef, {
+          totalShops: actualCount,
+          lastVerified: new Date().toISOString(),
+          previousCount: storedCount,
+          repairHistory: [{
+            timestamp: new Date().toISOString(),
+            previousCount: storedCount,
+            newCount: actualCount,
+            difference: actualCount - storedCount
+          }]
+        }, { merge: true })
+
+        // Refresh the display
+        await fetchShops(debouncedSearchTerm)
+      }
+    } catch (error) {
+      console.error("Error verifying shops counter:", error)
+    } finally {
+      setVerifying(false)
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center gap-4 mb-6 mt-4">
@@ -493,6 +532,7 @@ export default function ShopsPage() {
                   </PaginationItem>
                 </PaginationContent>
               </Pagination>
+
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground whitespace-nowrap">每頁顯示：</span>
                 <Select
@@ -514,6 +554,21 @@ export default function ShopsPage() {
                 </Select>
               </div>
             </div>
+
+
+          </div>
+
+          <div className="flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={verifyShopsCounter}
+              disabled={verifying}
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${verifying ? 'animate-spin' : ''}`} />
+              {verifying ? 'Verifying...' : 'Verify Shop Count'}
+            </Button>
           </div>
         </div>
       )}

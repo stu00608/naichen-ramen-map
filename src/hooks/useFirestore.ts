@@ -14,12 +14,76 @@ import {
   limit,
   QueryConstraint,
   serverTimestamp,
+  writeBatch,
+  runTransaction,
+  increment,
+  Timestamp,
+  getCountFromServer
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 export function useFirestore(collectionName: string) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Verify and repair counter for shops collection
+  const verifyAndRepairCounter = async () => {
+    if (collectionName !== 'shops') {
+      setError('Counter verification is only available for shops collection');
+      return null;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Get the actual count of shops
+      const shopsCol = collection(db, 'shops');
+      const snapshot = await getCountFromServer(shopsCol);
+      const actualCount = snapshot.data().count;
+
+      // Get the current counter value
+      const statsRef = doc(db, 'stats', 'shops');
+      const statsSnap = await getDoc(statsRef);
+      const currentCount = statsSnap.exists() ? (statsSnap.data().total || 0) : 0;
+
+      // If counts match, no repair needed
+      if (actualCount === currentCount) {
+        setLoading(false);
+        return {
+          needsRepair: false,
+          actualCount,
+          previousCount: currentCount
+        };
+      }
+
+      // Counts don't match, repair needed
+      await runTransaction(db, async (transaction) => {
+        transaction.set(statsRef, {
+          total: actualCount,
+          updated_at: Timestamp.now(),
+          last_repaired_at: Timestamp.now(),
+          previous_count: currentCount
+        }, { merge: true });
+      });
+
+      setLoading(false);
+      return {
+        needsRepair: true,
+        actualCount,
+        previousCount: currentCount,
+        repaired: true
+      };
+
+    } catch (err: any) {
+      setError(err.message);
+      setLoading(false);
+      return {
+        needsRepair: null,
+        error: err.message
+      };
+    }
+  };
 
   // Check if document exists by field value
   const checkDocumentExists = async (field: string, value: any) => {
@@ -38,19 +102,45 @@ export function useFirestore(collectionName: string) {
     }
   };
 
-  // 添加文檔
+  // Add document with counter update for shops
   const addDocument = async (data: any) => {
     setLoading(true);
     setError(null);
 
     try {
-      const docRef = await addDoc(collection(db, collectionName), {
-        ...data,
-        created_at: serverTimestamp(),
-        updated_at: serverTimestamp()
-      });
-      setLoading(false);
-      return { id: docRef.id, ...data };
+      if (collectionName === 'shops') {
+        const batch = writeBatch(db);
+        
+        // Create new document reference
+        const docRef = doc(collection(db, collectionName));
+        
+        // Add the shop document
+        batch.set(docRef, {
+          ...data,
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp()
+        });
+        
+        // Update the counter
+        const statsRef = doc(db, 'stats', 'shops');
+        batch.set(statsRef, {
+          total: increment(1),
+          updated_at: Timestamp.now()
+        }, { merge: true });
+        
+        await batch.commit();
+        setLoading(false);
+        return { id: docRef.id, ...data };
+      } else {
+        // Regular document addition for other collections
+        const docRef = await addDoc(collection(db, collectionName), {
+          ...data,
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp()
+        });
+        setLoading(false);
+        return { id: docRef.id, ...data };
+      }
     } catch (err: any) {
       setError(err.message);
       setLoading(false);
@@ -58,7 +148,7 @@ export function useFirestore(collectionName: string) {
     }
   };
 
-  // 更新文檔
+  // Update document (no counter update needed)
   const updateDocument = async (id: string, data: any) => {
     setLoading(true);
     setError(null);
@@ -78,13 +168,30 @@ export function useFirestore(collectionName: string) {
     }
   };
 
-  // 刪除文檔
+  // Delete document with counter update for shops
   const deleteDocument = async (id: string) => {
     setLoading(true);
     setError(null);
 
     try {
-      await deleteDoc(doc(db, collectionName, id));
+      if (collectionName === 'shops') {
+        await runTransaction(db, async (transaction) => {
+          // Delete the shop document
+          const docRef = doc(db, collectionName, id);
+          transaction.delete(docRef);
+          
+          // Update the counter
+          const statsRef = doc(db, 'stats', 'shops');
+          transaction.set(statsRef, {
+            total: increment(-1),
+            updated_at: Timestamp.now()
+          }, { merge: true });
+        });
+      } else {
+        // Regular document deletion for other collections
+        await deleteDoc(doc(db, collectionName, id));
+      }
+      
       setLoading(false);
       return true;
     } catch (err: any) {
@@ -148,7 +255,8 @@ export function useFirestore(collectionName: string) {
     deleteDocument,
     getDocument,
     getDocuments,
-    checkDocumentExists
+    checkDocumentExists,
+    verifyAndRepairCounter
   };
 }
 
