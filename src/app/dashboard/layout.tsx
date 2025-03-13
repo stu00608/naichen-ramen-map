@@ -1,8 +1,7 @@
 "use client"
 
-import React from "react"
+import React, { useEffect, useState } from "react"
 import Link from "next/link"
-import { useEffect } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { useAuth } from "@/hooks/useAuth"
 import { AppSidebar } from "@/components/app-sidebar"
@@ -19,6 +18,8 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
+import { useFirestore } from "@/hooks/useFirestore"
+import { Shop } from "@/types"
 
 const pathMap: Record<string, string> = {
   "/dashboard": "主控台",
@@ -27,14 +28,20 @@ const pathMap: Record<string, string> = {
   "/dashboard/docs/how-to-add-record": "如何新增一篇紀錄",
 }
 
-function getBreadcrumbItems(pathname: string) {
+function getBreadcrumbItems(pathname: string, shopName?: string) {
   const paths = pathname.split("/").filter(Boolean)
   const items = []
   let currentPath = ""
 
   for (const path of paths) {
     currentPath += `/${path}`
-    const label = pathMap[currentPath]
+    let label = pathMap[currentPath]
+    
+    // If we're on a shop edit page and have the shop name
+    if (!label && path !== "shops" && currentPath.includes("/dashboard/shops/") && shopName) {
+      label = shopName
+    }
+    
     if (label) {
       items.push({ path: currentPath, label })
     }
@@ -51,7 +58,25 @@ export default function DashboardLayout({
   const { user, loading } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
-  const breadcrumbItems = getBreadcrumbItems(pathname)
+  const { getDocument } = useFirestore("shops")
+  const [shopName, setShopName] = useState<string>()
+
+  useEffect(() => {
+    const fetchShopName = async () => {
+      const match = pathname.match(/\/dashboard\/shops\/([^/]+)$/)
+      if (match && match[1] !== "new") {
+        const shopId = match[1]
+        const shop = await getDocument(shopId) as Shop | null
+        if (shop) {
+          setShopName(shop.name)
+        }
+      } else {
+        setShopName(undefined)
+      }
+    }
+
+    fetchShopName()
+  }, [pathname, getDocument])
 
   useEffect(() => {
     if (!loading && !user) {
@@ -70,6 +95,8 @@ export default function DashboardLayout({
   if (!user) {
     return null
   }
+
+  const breadcrumbItems = getBreadcrumbItems(pathname, shopName)
 
   return (
     <SidebarProvider>

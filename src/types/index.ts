@@ -25,6 +25,8 @@ export interface Shop {
   updated_at: Timestamp;
   tags: string[];
   google_place_id?: string;
+  isBusinessHoursAvailable: boolean;
+  googleMapsUri?: string;
 }
 
 // 個人喜好設定類型

@@ -99,7 +99,19 @@ export default function ShopsPage() {
               {shops.map((shop) => (
                 <TableRow key={shop.id}>
                   <TableCell>
-                    <div className="font-medium">{shop.name}</div>
+                    <div className="font-medium flex items-center gap-2">
+                      {shop.name}
+                      {shop.googleMapsUri && (
+                        <a
+                          href={shop.googleMapsUri}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-muted-foreground hover:text-primary"
+                        >
+                          ↗︎
+                        </a>
+                      )}
+                    </div>
                     <div className="text-sm text-muted-foreground">{shop.address}</div>
                   </TableCell>
                   <TableCell>{shop.region}</TableCell>

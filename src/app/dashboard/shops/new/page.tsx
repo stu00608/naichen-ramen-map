@@ -19,6 +19,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning"
+import { useGooglePlaceIdValidation } from "@/hooks/forms/useGooglePlaceIdValidation"
+import { useShopFormUtils, shopSchema, type ShopFormData } from "@/hooks/forms/useShopFormUtils"
+import { Tag, TagInput } from "@/components/ui/tag-input-wrapper"
 
 interface BusinessHourPeriod {
   open: string
@@ -30,59 +34,41 @@ interface DaySchedule {
   isClosed: boolean
 }
 
-const shopSchema = z.object({
-  name: z.string().min(1, "請輸入店名"),
-  address: z.string().min(1, "請輸入地址"),
-  country: z.string().min(1, "請選擇國家"),
-  region: z.string().min(1, "請選擇區域"),
-  shop_types: z.array(z.string()).min(1, "請選擇至少一種拉麵類型"),
-  tags: z.string().optional(),
-  business_hours: z.record(z.object({
-    periods: z.array(z.object({
-      open: z.string(),
-      close: z.string()
-    })),
-    isClosed: z.boolean()
-  })).optional(),
-  closed_days: z.array(z.string()).optional(),
-  google_place_id: z.string().optional()
-})
-
-type ShopFormData = z.infer<typeof shopSchema>
-
 export default function NewShopPage() {
   const { addDocument, loading, error, checkDocumentExists } = useFirestore("shops")
+  const validateGooglePlaceId = useGooglePlaceIdValidation()
+  const { getDefaultBusinessHours, formatFormDataForSubmission, addPeriod, removePeriod, geocodeAddress } = useShopFormUtils()
   const [geoError, setGeoError] = useState<string | null>(null)
   const router = useRouter()
   const [selectedCountry, setSelectedCountry] = useState<keyof typeof REGIONS>("JP")
   const locationRef = useRef<GeoPoint | null>(null)
+  const [lastSearchedValue, setLastSearchedValue] = useState("")
   const [showPlacesResults, setShowPlacesResults] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const searchContainerRef = useRef<HTMLDivElement>(null)
-  
-  const defaultBusinessHours = DAYS_OF_WEEK.reduce((acc, day) => ({
-    ...acc,
-    [day]: { 
-      periods: [{ open: "11:00", close: "21:00" }],
-      isClosed: false 
-    }
-  }), {})
+  const [isInputFocused, setIsInputFocused] = useState(false)
+  const [excludeBusinessHours, setExcludeBusinessHours] = useState(false)
+  const googleMapsUriRef = useRef<string | null>(null)
+  const [tags, setTags] = useState<Tag[]>([])
+  const [activeTagIndex, setActiveTagIndex] = useState<number | null>(null)
 
-  const { control, register, handleSubmit, setValue, watch, formState: { errors } } = useForm<ShopFormData>({
+  const { control, register, handleSubmit, setValue, watch, formState: { errors, isDirty } } = useForm<ShopFormData>({
     resolver: zodResolver(shopSchema),
     defaultValues: {
       country: "JP",
-      business_hours: defaultBusinessHours,
+      business_hours: getDefaultBusinessHours(),
       closed_days: [],
-      shop_types: []
+      shop_types: [],
+      tags: []
     }
   })
 
-  const [excludeBusinessHours, setExcludeBusinessHours] = useState(false)
+  const { shouldBlock } = useUnsavedChangesWarning(isDirty)
 
   const countryValue = watch("country")
   const nameValue = watch("name")
+  const businessHours = watch("business_hours")
 
   useEffect(() => {
     if (countryValue !== selectedCountry) {
@@ -96,12 +82,13 @@ export default function NewShopPage() {
       clearTimeout(searchTimeoutRef.current)
     }
 
-    if (nameValue && nameValue.length >= 3) {
+    if (isInputFocused && nameValue && nameValue.length >= 3 && nameValue !== lastSearchedValue) {
       searchTimeoutRef.current = setTimeout(() => {
         searchPlaces(nameValue, countryValue)
         setShowPlacesResults(true)
+        setLastSearchedValue(nameValue)
       }, 2000)
-    } else {
+    } else if (!nameValue || nameValue.length < 3) {
       setShowPlacesResults(false)
       setSearchResults([])
     }
@@ -111,7 +98,7 @@ export default function NewShopPage() {
         clearTimeout(searchTimeoutRef.current)
       }
     }
-  }, [nameValue, countryValue])
+  }, [nameValue, countryValue, isInputFocused, lastSearchedValue])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -153,7 +140,10 @@ export default function NewShopPage() {
     }
   }
 
-  const handlePlaceSelect = (place: any) => {
+  const handlePlaceSelect = (e: React.MouseEvent, place: any) => {
+    e.preventDefault()
+    e.stopPropagation()
+
     setValue("name", place.displayName.text)
 
     let cleanAddress = place.formattedAddress
@@ -207,36 +197,16 @@ export default function NewShopPage() {
       setExcludeBusinessHours(false)
     } else {
       setExcludeBusinessHours(true)
-      setValue("business_hours", undefined)
+      setValue("business_hours", getDefaultBusinessHours())
     }
 
     locationRef.current = new GeoPoint(
       place.location.latitude,
       place.location.longitude
     )
+    googleMapsUriRef.current = place.googleMapsUri || null
     setShowPlacesResults(false)
     setSearchResults([])
-  }
-
-  const addPeriod = (day: string) => {
-    const currentHours = watch("business_hours")
-    if (!currentHours?.[day]) return
-    
-    // Check if we've reached the maximum number of periods (5)
-    if (currentHours[day].periods.length >= 5) {
-      return
-    }
-
-    const newPeriods = [...currentHours[day].periods, { open: "11:00", close: "21:00" }]
-    setValue(`business_hours.${day}.periods`, newPeriods)
-  }
-
-  const removePeriod = (day: string, index: number) => {
-    const currentHours = watch("business_hours")
-    if (!currentHours?.[day] || currentHours[day].periods.length <= 1) return
-
-    const newPeriods = currentHours[day].periods.filter((_, i) => i !== index)
-    setValue(`business_hours.${day}.periods`, newPeriods)
   }
 
   const onSubmit = async (data: ShopFormData) => {
@@ -244,35 +214,33 @@ export default function NewShopPage() {
       setGeoError(null)
 
       if (data.google_place_id) {
-        const exists = await checkDocumentExists("google_place_id", data.google_place_id)
-        if (exists) {
-          setGeoError("此店家已經存在於資料庫中")
+        const validationResult = await validateGooglePlaceId(data.google_place_id)
+        if (typeof validationResult === "string") {
+          setGeoError(validationResult)
+          return
+        }
+      } 
+      else if (!locationRef.current || (locationRef.current.latitude === 0 && locationRef.current.longitude === 0)) {
+        try {
+          const geoResult = await geocodeAddress(data.address, data.country)
+          locationRef.current = geoResult.location
+          if (geoResult.google_place_id) {
+            data.google_place_id = geoResult.google_place_id
+          }
+          googleMapsUriRef.current = geoResult.googleMapsUri || null
+        } catch (err: any) {
+          setGeoError(err.message)
           return
         }
       }
       
-      const tags = data.tags 
-        ? data.tags.split(",").map(tag => tag.trim()).filter(tag => tag)
-        : []
-      
-      const business_hours = excludeBusinessHours ? undefined : { ...data.business_hours }
-      const closed_days = !excludeBusinessHours ? DAYS_OF_WEEK.filter(day => 
-        business_hours?.[day]?.isClosed
-      ) : []
-      
+      const formattedData = formatFormDataForSubmission(data, excludeBusinessHours)
       const shopData = {
-        name: data.name,
-        address: data.address,
-        country: data.country,
-        region: data.region,
-        shop_types: data.shop_types,
-        business_hours,
-        closed_days,
-        tags,
-        google_place_id: data.google_place_id,
+        ...formattedData,
         created_at: Timestamp.now(),
         updated_at: Timestamp.now(),
-        location: locationRef.current || new GeoPoint(0, 0)
+        location: locationRef.current || new GeoPoint(0, 0),
+        googleMapsUri: googleMapsUriRef.current
       }
       
       const result = await addDocument(shopData)
@@ -283,6 +251,47 @@ export default function NewShopPage() {
     } catch (err: any) {
       setGeoError(err.message)
     }
+  }
+
+  const handleAddPeriod = (day: string) => {
+    if (!businessHours?.[day]) return
+    const newHours = addPeriod(businessHours, day)
+    setValue("business_hours", newHours)
+  }
+
+  const handleRemovePeriod = (day: string, index: number) => {
+    if (!businessHours?.[day]) return
+    const newHours = removePeriod(businessHours, day, index)
+    setValue("business_hours", newHours)
+  }
+
+  const handleCancel = () => {
+    if (shouldBlock()) {
+      return
+    }
+    router.push("/dashboard/shops")
+  }
+
+  const handleInputFocus = () => {
+    setIsInputFocused(true)
+    if (nameValue && nameValue.length >= 3) {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current)
+      }
+      searchTimeoutRef.current = setTimeout(() => {
+        searchPlaces(nameValue, countryValue)
+        setShowPlacesResults(true)
+      }, 2000)
+    }
+  }
+
+  const handleInputBlur = () => {
+    setIsInputFocused(false)
+    setTimeout(() => {
+      if (!searchContainerRef.current?.contains(document.activeElement)) {
+        setShowPlacesResults(false)
+      }
+    }, 200)
   }
 
   return (
@@ -305,6 +314,8 @@ export default function NewShopPage() {
                 id="name"
                 {...register("name")}
                 placeholder="輸入店名搜尋..."
+                onFocus={handleInputFocus}
+                onBlur={handleInputBlur}
               />
             </div>
             {showPlacesResults && searchResults.length > 0 && (
@@ -314,7 +325,8 @@ export default function NewShopPage() {
                     {searchResults.map((place) => (
                       <button
                         key={place.id}
-                        onClick={() => handlePlaceSelect(place)}
+                        onClick={(e) => handlePlaceSelect(e, place)}
+                        type="button"
                         className="w-full px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground rounded-lg"
                       >
                         <div className="flex flex-col gap-1">
@@ -335,15 +347,27 @@ export default function NewShopPage() {
           {/* 國家 & 區域 */}
           <div className="col-span-2 space-y-2">
             <Label htmlFor="country" className="text-lg">國家 <span className="text-destructive">*</span></Label>
-            <select
-              id="country"
-              {...register("country")}
-              className="w-full px-3 py-2 border rounded-lg bg-background"
-            >
-              {Object.entries(COUNTRIES).map(([key, value]) => (
-                <option key={key} value={key}>{value}</option>
-              ))}
-            </select>
+            <Controller
+              name="country"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  value={field.value}
+                  onValueChange={field.onChange}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="選擇國家" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(COUNTRIES).map(([key, value]) => (
+                      <SelectItem key={key} value={key}>
+                        {value}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
             {errors.country && (
               <p className="mt-2 text-sm text-destructive">{errors.country.message}</p>
             )}
@@ -351,17 +375,28 @@ export default function NewShopPage() {
           
           <div className="col-span-2 space-y-2">
             <Label htmlFor="region" className="text-lg">區域 <span className="text-destructive">*</span></Label>
-            <select
-              id="region"
-              {...register("region")}
-              className="w-full px-3 py-2 border rounded-lg bg-background"
-              disabled={!selectedCountry}
-            >
-              <option value="">選擇區域</option>
-              {selectedCountry && REGIONS[selectedCountry].map((region) => (
-                <option key={region} value={region}>{region}</option>
-              ))}
-            </select>
+            <Controller
+              name="region"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  value={field.value}
+                  onValueChange={field.onChange}
+                  disabled={!selectedCountry}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="選擇區域" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {selectedCountry && REGIONS[selectedCountry].map((region) => (
+                      <SelectItem key={region} value={region}>
+                        {region}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
             {errors.region && (
               <p className="mt-2 text-sm text-destructive">{errors.region.message}</p>
             )}
@@ -427,11 +462,20 @@ export default function NewShopPage() {
           
           {/* 標籤 */}
           <div className="col-span-4 space-y-2">
-            <Label htmlFor="tags" className="text-lg">標籤（以逗號分隔）</Label>
-            <Input
-              id="tags"
-              {...register("tags")}
-              placeholder="例如：濃厚豚骨,特製麵條,人氣店家"
+            <Label className="text-lg">標籤</Label>
+            <Controller
+              name="tags"
+              control={control}
+              render={({ field }) => (
+                <TagInput
+                  {...field}
+                  placeholder="輸入標籤..."
+                  tags={field.value}
+                  setTags={field.onChange}
+                  activeTagIndex={activeTagIndex}
+                  setActiveTagIndex={setActiveTagIndex}
+                />
+              )}
             />
           </div>
 
@@ -445,9 +489,9 @@ export default function NewShopPage() {
                   onCheckedChange={(checked: boolean) => {
                     setExcludeBusinessHours(checked)
                     if (checked) {
-                      setValue("business_hours", undefined)
+                      setValue("business_hours", getDefaultBusinessHours())
                     } else {
-                      setValue("business_hours", defaultBusinessHours)
+                      setValue("business_hours", getDefaultBusinessHours())
                     }
                   }}
                 />
@@ -480,7 +524,7 @@ export default function NewShopPage() {
                             type="button"
                             variant="ghost"
                             size="sm"
-                            onClick={() => addPeriod(day)}
+                            onClick={() => handleAddPeriod(day)}
                             className="text-primary hover:text-primary/90"
                           >
                             新增時段
@@ -526,7 +570,7 @@ export default function NewShopPage() {
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => removePeriod(day, index)}
+                                onClick={() => handleRemovePeriod(day, index)}
                                 className="text-destructive hover:text-destructive/90 px-2"
                               >
                                 刪除
@@ -547,7 +591,7 @@ export default function NewShopPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => router.push("/dashboard/shops")}
+              onClick={handleCancel}
             >
               取消
             </Button>

@@ -38,7 +38,7 @@ export async function POST(request: Request) {
           'Content-Type': 'application/json',
           'X-Goog-Api-Key': apiKey,
           'X-Goog-FieldMask':
-            'places.displayName,places.formattedAddress,places.currentOpeningHours,places.regularSecondaryOpeningHours,places.location,places.id',
+            'places.displayName,places.formattedAddress,places.currentOpeningHours,places.regularSecondaryOpeningHours,places.location,places.id,places.googleMapsUri',
         },
         body: JSON.stringify({
           textQuery: query,
