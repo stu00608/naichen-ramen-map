@@ -16,40 +16,47 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-export function LoginForm({
+export function SignUpForm({
   className,
   ...props
 }: React.ComponentPropsWithoutRef<"div">) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [inviteCode, setInviteCode] = useState("")
   const [error, setError] = useState("")
-  const { signIn, signInWithGoogle, isLoading } = useAuth()
+  const { signUp, signUpWithGoogle, isLoading } = useAuth()
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
 
-    if (!email || !password) {
-      setError("請填寫電子郵件和密碼")
+    if (!email || !password || !inviteCode) {
+      setError("請填寫所有必填欄位")
       return
     }
 
     try {
-      await signIn(email, password)
+      await signUp(email, password, inviteCode)
       router.push("/dashboard/shops")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "登入失敗")
+      setError(err instanceof Error ? err.message : "註冊失敗")
     }
   }
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleSignUp = async () => {
+    if (!inviteCode) {
+      setError("請填寫邀請碼")
+      return
+    }
+
     setError("")
+
     try {
-      await signInWithGoogle()
+      await signUpWithGoogle(inviteCode)
       router.push("/dashboard/shops")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Google 登入失敗")
+      setError(err instanceof Error ? err.message : "Google 註冊失敗")
     }
   }
 
@@ -57,9 +64,9 @@ export function LoginForm({
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>
         <CardHeader>
-          <CardTitle className="text-2xl">奶辰拉麵地圖・後台管理</CardTitle>
+          <CardTitle className="text-2xl">奶辰拉麵地圖・註冊</CardTitle>
           <CardDescription>
-            登入以新增、修改拉麵店及評價資料
+            使用邀請碼註冊新帳號
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -82,16 +89,7 @@ export function LoginForm({
                 />
               </div>
               <div className="grid gap-2">
-                <div className="flex items-center">
-                  <Label htmlFor="password">密碼</Label>
-                  <a
-                    href="#"
-                    className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
-                    onClick={(e) => e.preventDefault()}
-                  >
-                    忘記密碼?
-                  </a>
-                </div>
+                <Label htmlFor="password">密碼</Label>
                 <Input
                   id="password"
                   type="password"
@@ -100,26 +98,37 @@ export function LoginForm({
                   required
                 />
               </div>
+              <div className="grid gap-2">
+                <Label htmlFor="invite-code">邀請碼</Label>
+                <Input
+                  id="invite-code"
+                  type="text"
+                  placeholder="輸入邀請碼"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  required
+                />
+              </div>
               <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? "登入中..." : "登入"}
+                {isLoading ? "註冊中..." : "註冊"}
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 className="w-full"
                 disabled={isLoading}
-                onClick={handleGoogleSignIn}
+                onClick={handleGoogleSignUp}
               >
-                以 Google 登入
+                以 Google 註冊
               </Button>
             </div>
             <div className="mt-4 text-center text-sm">
-              還沒有帳號嗎?{" "}
+              已經有帳號了？{" "}
               <Link
-                href="/signup"
+                href="/login"
                 className="underline underline-offset-4"
               >
-                註冊
+                登入
               </Link>
             </div>
           </form>

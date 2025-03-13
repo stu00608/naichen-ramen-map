@@ -26,6 +26,7 @@ const pathMap: Record<string, string> = {
   "/dashboard/shops": "店家管理",
   "/dashboard/shops/new": "創建店家",
   "/dashboard/docs/how-to-add-record": "如何新增一篇紀錄",
+  "/dashboard/settings": "帳號設定",
 }
 
 function getBreadcrumbItems(pathname: string, shopName?: string) {
