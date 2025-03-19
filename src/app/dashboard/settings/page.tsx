@@ -6,8 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dice6, Copy, Check, Loader2, Trash2, Shield, ShieldOff, HelpCircle, Search, X } from "lucide-react"
-import { collection, addDoc, query, where, getDocs, Timestamp, deleteDoc, doc, updateDoc, runTransaction, limit, orderBy, startAt, endAt } from "firebase/firestore"
+import { Dice6, Copy, Check, Loader2, Trash2, Shield, ShieldOff, HelpCircle, Search, X, RefreshCw, Database } from "lucide-react"
+import { collection, addDoc, query, where, getDocs, Timestamp, deleteDoc, doc, updateDoc, runTransaction, limit, orderBy, startAt, endAt, getDoc, setDoc } from "firebase/firestore"
 import { sendEmailVerification } from "firebase/auth"
 import { auth, db } from "@/lib/firebase"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -57,6 +57,9 @@ export default function SettingsPage() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [searchBy, setSearchBy] = useState<'displayName' | 'email'>('displayName')
   const itemsPerPage = 10 // Fixed page size for user results
+
+  // Admin functionality states
+  const [verifyingShops, setVerifyingShops] = useState(false)
 
   // No initial data load - we'll search instead
   useEffect(() => {
@@ -347,109 +350,189 @@ export default function SettingsPage() {
     }
   }
 
+  // Admin functionality
+  const verifyShopsCounter = async () => {
+    try {
+      setVerifyingShops(true)
+      
+      // Get actual count
+      const shopsRef = collection(db, "shops")
+      const snapshot = await getDocs(shopsRef)
+      const actualCount = snapshot.size
+
+      // Get stored count
+      const statsRef = doc(db, "stats", "shops")
+      const statsDoc = await getDoc(statsRef)
+      const storedCount = statsDoc.exists() ? statsDoc.data()?.totalShops || 0 : 0
+
+      if (actualCount !== storedCount) {
+        // Update the counter
+        await setDoc(statsRef, {
+          totalShops: actualCount,
+          lastVerified: new Date().toISOString(),
+          previousCount: storedCount,
+          repairHistory: [{
+            timestamp: new Date().toISOString(),
+            previousCount: storedCount,
+            newCount: actualCount,
+            difference: actualCount - storedCount
+          }]
+        }, { merge: true })
+
+        toast.success(`店家計數已更新: ${storedCount} → ${actualCount} (差異: ${actualCount - storedCount})`)
+      } else {
+        toast.success('店家計數已驗證: 無需更新')
+      }
+    } catch (error) {
+      console.error("Error verifying shops counter:", error)
+      toast.error("驗證店家計數時發生錯誤")
+    } finally {
+      setVerifyingShops(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>帳號資訊</CardTitle>
-          <CardDescription>查看您的帳號資訊</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>電子郵件</Label>
-            <div className="text-sm text-muted-foreground">{user?.email}</div>
-          </div>
-          <div className="space-y-2">
-            <Label>名稱</Label>
-            <div className="flex gap-2">
-              <Input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                className="max-w-[300px] h-10"
-              />
-              <Button 
-                onClick={handleUpdateProfile}
-                disabled={isLoading || !displayName || displayName === user?.displayName}
-                className="h-10"
-              >
-                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                更新
-              </Button>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>帳號資訊</CardTitle>
+            <CardDescription>查看您的帳號資訊</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>電子郵件</Label>
+              <div className="text-sm text-muted-foreground">{user?.email}</div>
             </div>
-          </div>
-          <div className="space-y-2">
-            <Label>角色</Label>
-            <div className="space-y-1">
-              <div className="text-sm text-muted-foreground">
-                {user?.role === 'ADMIN' ? '管理員' : '一般用戶'}
+            <div className="space-y-2">
+              <Label>名稱</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="max-w-[300px] h-10"
+                />
+                <Button 
+                  onClick={handleUpdateProfile}
+                  disabled={isLoading || !displayName || displayName === user?.displayName}
+                  className="h-10"
+                >
+                  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  更新
+                </Button>
               </div>
             </div>
-          </div>
-          <div className="space-y-2">
-            <Label>電子郵件驗證</Label>
-            <div className="text-sm">
-              {user?.emailVerified ? (
-                <span className="text-green-600">已驗證</span>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-yellow-600">未驗證</span>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={handleResendVerification}
-                    disabled={loading}
-                  >
-                    {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    重新發送驗證信
-                  </Button>
+            <div className="space-y-2">
+              <Label>角色</Label>
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">
+                  {user?.role === 'ADMIN' ? '管理員' : '一般用戶'}
                 </div>
-              )}
+              </div>
             </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Google 帳號連結</Label>
-            <div className="text-sm">
-              {auth.currentUser?.providerData.some(
-                provider => provider.providerId === 'google.com'
-              ) ? (
-                <span className="text-green-600">已連結</span>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">未連結</span>
+            <div className="space-y-2">
+              <Label>電子郵件驗證</Label>
+              <div className="text-sm">
+                {user?.emailVerified ? (
+                  <span className="text-green-600">已驗證</span>
+                ) : (
                   <div className="flex items-center gap-2">
+                    <span className="text-yellow-600">未驗證</span>
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={async () => {
-                        try {
-                          await linkGoogleAccount()
-                          toast.success("Google 帳號連結成功")
-                        } catch (err) {
-                          toast.error(err instanceof Error ? err.message : "連結失敗")
-                        }
-                      }}
+                      onClick={handleResendVerification}
                       disabled={loading}
                     >
                       {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      連結 Google 帳號
+                      重新發送驗證信
                     </Button>
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>請使用與目前帳號相同電子郵件的 Google 帳號進行連結</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Google 帳號連結</Label>
+              <div className="text-sm">
+                {auth.currentUser?.providerData.some(
+                  provider => provider.providerId === 'google.com'
+                ) ? (
+                  <span className="text-green-600">已連結</span>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">未連結</span>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await linkGoogleAccount()
+                            toast.success("Google 帳號連結成功")
+                          } catch (err) {
+                            toast.error(err instanceof Error ? err.message : "連結失敗")
+                          }
+                        }}
+                        disabled={loading}
+                      >
+                        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        連結 Google 帳號
+                      </Button>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <HelpCircle className="h-4 w-4 text-muted-foreground" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>請使用與目前帳號相同電子郵件的 Google 帳號進行連結</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* System Management card - only visible for admins */}
+        {isAdmin && (
+          <Card>
+            <CardHeader>
+              <CardTitle>系統管理</CardTitle>
+              <CardDescription>進階系統管理功能</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-medium mb-2">資料庫管理</h3>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={verifyShopsCounter}
+                      disabled={verifyingShops}
+                      className="flex items-center gap-2"
+                    >
+                      <Database className="h-4 w-4" />
+                      {verifyingShops ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          驗證中...
+                        </>
+                      ) : (
+                        '驗證店家數量'
+                      )}
+                    </Button>
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
       {isAdmin && (
         <>
           <Card>
