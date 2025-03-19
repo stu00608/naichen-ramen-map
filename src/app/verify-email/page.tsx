@@ -1,9 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/contexts/auth-context"
-import { sendEmailVerification } from "firebase/auth"
+import { useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { applyActionCode } from "firebase/auth"
 import { auth } from "@/lib/firebase"
 import { Button } from "@/components/ui/button"
 import {
@@ -14,75 +13,91 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2 } from "lucide-react"
+import { Loader2, CheckCircle2, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-export default function VerifyEmailPage() {
-  const [isLoading, setIsLoading] = useState(false)
+export default function VerifyEmailActionPage() {
+  const [isVerifying, setIsVerifying] = useState(true)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
-  const { user } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const oobCode = searchParams.get("oobCode")
 
   useEffect(() => {
-    if (!user) {
-      router.push("/login")
-    } else if (user.emailVerified) {
-      router.push("/dashboard/shops")
+    if (!oobCode) {
+      setError("無效的驗證連結")
+      setIsVerifying(false)
+      return
     }
-  }, [user, router])
 
-  const handleResendVerification = async () => {
-    if (!auth.currentUser) return
-
-    setIsLoading(true)
-    setError("")
-    setSuccess("")
-
-    try {
-      await sendEmailVerification(auth.currentUser)
-      setSuccess("驗證信已重新發送，請查看您的電子郵件")
-    } catch (err) {
-      setError("發送驗證信失敗")
-    } finally {
-      setIsLoading(false)
+    async function verifyEmail() {
+      try {
+        await applyActionCode(auth, oobCode as string)
+        setSuccess("您的電子郵件已成功驗證！")
+        setIsVerifying(false)
+      } catch (err) {
+        setError("此驗證連結已失效或已過期")
+        setIsVerifying(false)
+      }
     }
+
+    verifyEmail()
+  }, [oobCode])
+
+  if (isVerifying) {
+    return (
+      <div className="container flex h-screen w-screen flex-col items-center justify-center">
+        <Card className="w-full max-w-[400px]">
+          <CardContent className="pt-6">
+            <div className="flex justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+            <p className="mt-4 text-center text-sm text-muted-foreground">
+              正在驗證您的電子郵件...
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
-
-  if (!user) return null
 
   return (
     <div className="container flex h-screen w-screen flex-col items-center justify-center">
       <div className={cn("flex w-full max-w-[400px] flex-col gap-6")}>
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">驗證電子郵件</CardTitle>
-            <CardDescription>
-              我們已發送驗證信至您的電子郵件：{user.email}
-            </CardDescription>
+            <CardTitle className="text-2xl">電子郵件驗證</CardTitle>
           </CardHeader>
           <CardContent>
             {error && (
-              <div className="mb-6 rounded bg-destructive/15 p-3 text-sm text-destructive">
-                {error}
+              <div className="flex flex-col items-center gap-4">
+                <XCircle className="h-16 w-16 text-destructive" />
+                <div className="text-center">
+                  <p className="font-semibold text-destructive">{error}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    請回到應用程式重新發送驗證信
+                  </p>
+                </div>
               </div>
             )}
             {success && (
-              <Alert className="mb-6">
-                <AlertDescription>{success}</AlertDescription>
-              </Alert>
+              <div className="flex flex-col items-center gap-4">
+                <CheckCircle2 className="h-16 w-16 text-green-600" />
+                <div className="text-center">
+                  <p className="font-semibold text-green-600">{success}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    您現在可以使用所有功能
+                  </p>
+                </div>
+              </div>
             )}
-            <div className="flex flex-col gap-6">
-              <p className="text-sm text-muted-foreground">
-                請點擊驗證信中的連結以完成驗證。驗證完成後，您將可以使用所有功能。
-              </p>
-              <Button
-                onClick={handleResendVerification}
-                disabled={isLoading}
+            <div className="mt-6">
+              <Button 
+                onClick={() => router.push("/dashboard/shops")}
                 className="w-full"
               >
-                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                重新發送驗證信
+                進入應用程式
               </Button>
             </div>
           </CardContent>
@@ -90,4 +105,4 @@ export default function VerifyEmailPage() {
       </div>
     </div>
   )
-} 
+}

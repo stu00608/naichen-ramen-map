@@ -21,6 +21,30 @@ import { doc, getDoc, setDoc, collection, query, where, getDocs, updateDoc } fro
 import { auth, db } from '@/lib/firebase';
 import { AuthContextType, UserProfile, InviteCode, AuthMethod } from '@/types/auth';
 
+// Function to get user-friendly error messages
+const getAuthErrorMessage = (errorCode: string): string => {
+  switch (errorCode) {
+    case 'auth/too-many-requests':
+      return '登入嘗試次數過多，請稍後再試或使用密碼重設功能';
+    case 'auth/wrong-password':
+      return '密碼錯誤，請重試';
+    case 'auth/user-not-found':
+      return '找不到此用戶，請確認電子郵件或註冊新帳號';
+    case 'auth/invalid-email':
+      return '無效的電子郵件格式';
+    case 'auth/email-already-in-use':
+      return '此電子郵件已被使用';
+    case 'auth/weak-password':
+      return '密碼強度太弱，請使用至少6個字符';
+    case 'auth/requires-recent-login':
+      return '此操作需要重新登入，請登出後重新登入';
+    case 'auth/popup-closed-by-user':
+      return '登入視窗已關閉，請重試';
+    default:
+      return '發生錯誤，請稍後再試';
+  }
+};
+
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -141,6 +165,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     try {
       setError(null);
+      setIsLoading(true);
       
       // Check sign-in methods for this email first
       const methods = await fetchSignInMethodsForEmail(auth, email);
@@ -168,15 +193,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         throw new Error('User not found. Please sign up first.');
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred during sign in');
+    } catch (err: any) {
+      // Check for specific Firebase error codes
+      if (err.code) {
+        setError(getAuthErrorMessage(err.code));
+      } else {
+        setError(err instanceof Error ? err.message : 'An error occurred during sign in');
+      }
       throw err;
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const signInWithGoogle = async () => {
     try {
       setError(null);
+      setIsLoading(true);
       const provider = new GoogleAuthProvider();
       
       const { user: firebaseUser } = await signInWithPopup(auth, provider);
@@ -215,13 +248,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           throw new Error(`此電子郵件已使用${methods.includes('password') ? '密碼' : '其他'}方式註冊。請使用該方式登入。`);
         }
       }
+      
+      // Check for specific Firebase error codes
+      if (err.code) {
+        setError(getAuthErrorMessage(err.code));
+      } else {
+        setError(err instanceof Error ? err.message : 'An error occurred during Google sign in');
+      }
+      
       throw err;
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const signUp = async (email: string, password: string, inviteCode: string, displayName: string) => {
     try {
       setError(null);
+      setIsLoading(true);
       const validInviteCode = await validateInviteCode(inviteCode);
         
       const { user: firebaseUser } = await createUserWithEmailAndPassword(auth, email, password);
@@ -242,14 +286,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setError('此電子郵件已註冊，或者請嘗試用相同Google帳號註冊');
         throw new Error('此電子郵件已註冊，或者請嘗試用相同Google帳號註冊');
       }
-      setError(err instanceof Error ? err.message : 'An error occurred during sign up');
+      
+      // Check for specific Firebase error codes
+      if (err.code) {
+        setError(getAuthErrorMessage(err.code));
+      } else {
+        setError(err instanceof Error ? err.message : 'An error occurred during sign up');
+      }
+      
       throw err;
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const signUpWithGoogle = async (inviteCode: string) => {
     try {
       setError(null);
+      setIsLoading(true);
       const validInviteCode = await validateInviteCode(inviteCode);
       
       const provider = new GoogleAuthProvider();
@@ -278,31 +332,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         throw new Error('已存在之使用者，請直接登入');
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred during Google sign up');
+    } catch (err: any) {
+      // Check for specific Firebase error codes
+      if (err.code) {
+        setError(getAuthErrorMessage(err.code));
+      } else {
+        setError(err instanceof Error ? err.message : 'An error occurred during Google sign up');
+      }
       throw err;
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const updateUserProfile = async (displayName: string): Promise<void> => {
-    if (!auth.currentUser) throw new Error("No user logged in")
-
-    await updateProfile(auth.currentUser, { displayName })
-    const updatedProfile = await createUserProfile(auth.currentUser, displayName)
-    setUser(updatedProfile)
+    if (!auth.currentUser) throw new Error("No user logged in");
+    try {
+      setIsLoading(true);
+      await updateProfile(auth.currentUser, { displayName });
+      const updatedProfile = await createUserProfile(auth.currentUser, displayName);
+      setUser(updatedProfile);
+    } catch (err: any) {
+      if (err.code) {
+        throw new Error(getAuthErrorMessage(err.code));
+      }
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const sendPasswordReset = async (email: string): Promise<void> => {
-    await sendPasswordResetEmail(auth, email)
+    try {
+      setIsLoading(true);
+      await sendPasswordResetEmail(auth, email);
+    } catch (err: any) {
+      if (err.code) {
+        throw new Error(getAuthErrorMessage(err.code));
+      }
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const signOut = async () => {
     try {
+      setIsLoading(true);
       await firebaseSignOut(auth);
       setUser(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred during sign out');
+    } catch (err: any) {
+      if (err.code) {
+        setError(getAuthErrorMessage(err.code));
+      } else {
+        setError(err instanceof Error ? err.message : 'An error occurred during sign out');
+      }
       throw err;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -317,6 +404,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       setError(null);
+      setIsLoading(true);
       const provider = new GoogleAuthProvider();
       
       try {
@@ -350,11 +438,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (err.code === 'auth/credential-already-in-use') {
           throw new Error('此 Google 帳號已連結至其他帳號');
         }
+        
+        // Check for specific Firebase error codes
+        if (err.code) {
+          throw new Error(getAuthErrorMessage(err.code));
+        }
+        
         throw err;
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred while linking Google account');
+    } catch (err: any) {
+      if (err.code) {
+        setError(getAuthErrorMessage(err.code));
+      } else {
+        setError(err instanceof Error ? err.message : 'An error occurred while linking Google account');
+      }
       throw err;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -386,4 +486,4 @@ export const useAuth = () => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-}; 
+};

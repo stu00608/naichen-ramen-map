@@ -50,7 +50,8 @@ export function SignUpForm({
 
     try {
       await signUp(email, password, inviteCode, displayName)
-      router.push("/verify-email")
+      // Redirect to the new email verification notice page
+      router.push("/verify-email/notice")
     } catch (err) {
       setError(err instanceof Error ? err.message : "註冊失敗")
     }
@@ -66,6 +67,7 @@ export function SignUpForm({
 
     try {
       await signUpWithGoogle(inviteCode)
+      // Google sign-up typically doesn't require email verification
       router.push("/dashboard/shops")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Google 註冊失敗")
@@ -171,4 +173,4 @@ export function SignUpForm({
       </Card>
     </div>
   )
-} 
+}

@@ -54,8 +54,15 @@ export function LoginForm({
     try {
       await signIn(email, password)
       router.push("/dashboard/shops")
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "登入失敗")
+    } catch (err: any) {
+      // If we get too many requests error, suggest password reset
+      if (err?.code === 'auth/too-many-requests') {
+        setError('登入嘗試次數過多，請稍後再試或使用密碼重設功能')
+        // Pre-fill reset email field
+        setResetEmail(email)
+      } else {
+        setError(err instanceof Error ? err.message : "登入失敗")
+      }
     }
   }
 
@@ -64,7 +71,7 @@ export function LoginForm({
     try {
       await signInWithGoogle()
       router.push("/dashboard/shops")
-    } catch (err) {
+    } catch (err: any) {
       if (err instanceof Error && err.message === 'NEEDS_INVITE_CODE') {
         setIsInviteDialogOpen(true)
       } else {
@@ -102,10 +109,13 @@ export function LoginForm({
       setSuccess("重設密碼信已發送，請查看您的電子郵件")
       setIsResetDialogOpen(false)
       setResetEmail("")
-    } catch (err) {
-      setError("發送重設密碼信失敗")
+    } catch (err: any) {
+      setError(err instanceof Error ? err.message : "發送重設密碼信失敗")
     }
   }
+
+  // Check if error is related to too many requests
+  const isTooManyRequestsError = error.includes('登入嘗試次數過多') || error.includes('too-many-requests')
 
   return (
     <div className={cn("flex flex-col gap-6 w-[400px]", className)} {...props}>
@@ -120,6 +130,20 @@ export function LoginForm({
           {error && (
             <div className="mb-6 rounded bg-destructive/15 p-3 text-sm text-destructive">
               {error}
+              {isTooManyRequestsError && (
+                <div className="mt-2">
+                  <Button 
+                    variant="link" 
+                    className="p-0 h-auto text-destructive"
+                    onClick={() => {
+                      setResetEmail(email)
+                      setIsResetDialogOpen(true)
+                    }}
+                  >
+                    點此重設密碼
+                  </Button>
+                </div>
+              )}
             </div>
           )}
           {success && (
@@ -251,4 +275,4 @@ export function LoginForm({
       </Dialog>
     </div>
   )
-} 
+}

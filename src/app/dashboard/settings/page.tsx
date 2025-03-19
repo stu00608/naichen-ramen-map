@@ -1,14 +1,16 @@
 "use client"
 
 import { useState, useEffect, useRef, KeyboardEvent as ReactKeyboardEvent } from "react"
+import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dice6, Copy, Check, Loader2, Trash2, Shield, ShieldOff, HelpCircle, Search, X, RefreshCw, Database } from "lucide-react"
-import { collection, addDoc, query, where, getDocs, Timestamp, deleteDoc, doc, updateDoc, runTransaction, limit, orderBy, startAt, endAt, getDoc, setDoc } from "firebase/firestore"
-import { sendEmailVerification } from "firebase/auth"
+import { Progress } from "@/components/ui/progress"
+import { Dice6, Copy, Check, Loader2, Trash2, Shield, ShieldOff, HelpCircle, Search, X, RefreshCw, Database, KeyRound } from "lucide-react"
+import { collection, addDoc, query, where, getDocs, Timestamp, deleteDoc, doc, updateDoc, runTransaction, limit, orderBy, startAt, endAt, getDoc, setDoc, writeBatch } from "firebase/firestore"
+import { sendEmailVerification, updatePassword, EmailAuthProvider, reauthenticateWithCredential, deleteUser, unlink } from "firebase/auth"
 import { auth, db } from "@/lib/firebase"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { generateRandomCode } from "@/lib/utils"
@@ -25,6 +27,15 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -38,9 +49,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import type { UserProfile, UserRole } from "@/types/auth"
+import { write } from "fs"
 
 export default function SettingsPage() {
-  const { user, isAdmin, updateUserProfile, linkGoogleAccount } = useAuth()
+  const { user, isAdmin, updateUserProfile, linkGoogleAccount, signOut } = useAuth()
   const [inviteCode, setInviteCode] = useState("")
   const [inviteCodes, setInviteCodes] = useState<any[]>([])
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
@@ -58,8 +70,30 @@ export default function SettingsPage() {
   const [searchBy, setSearchBy] = useState<'displayName' | 'email'>('displayName')
   const itemsPerPage = 10 // Fixed page size for user results
 
+  // Password change states
+  const [currentPassword, setCurrentPassword] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [changingPassword, setChangingPassword] = useState(false)
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
+  const [passwordError, setPasswordError] = useState("")
+
   // Admin functionality states
   const [verifyingShops, setVerifyingShops] = useState(false)
+
+  // Account removal states
+  const router = useRouter()
+  const [isRemoveAccountDialogOpen, setIsRemoveAccountDialogOpen] = useState(false)
+  const [confirmEmail, setConfirmEmail] = useState("")
+  const [confirmEmailRepeat, setConfirmEmailRepeat] = useState("")
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false)
+  
+  // Long press button states
+  const [pressProgress, setPressProgress] = useState(0)
+  const [isPressed, setIsPressed] = useState(false)
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null)
+  const LONG_PRESS_DURATION = 5000 // 5 seconds in milliseconds
+  const PROGRESS_INTERVAL = 50 // Update progress every 50ms
 
   // No initial data load - we'll search instead
   useEffect(() => {
@@ -93,6 +127,66 @@ export default function SettingsPage() {
     }
     fetchInviteCodes()
   }, [isAdmin, user?.uid])
+
+  // Handle long press events
+  const handlePressStart = () => {
+    if (confirmEmail !== user?.email || confirmEmailRepeat !== user?.email) {
+      toast.error("電子郵件地址不符合")
+      return
+    }
+
+    setIsPressed(true)
+    setPressProgress(0)
+
+    // Start a timer that increments progress
+    let elapsedTime = 0
+    longPressTimer.current = setInterval(() => {
+      elapsedTime += PROGRESS_INTERVAL
+      const newProgress = Math.min((elapsedTime / LONG_PRESS_DURATION) * 100, 100)
+      setPressProgress(newProgress)
+
+      // When we reach 100%, execute the delete
+      if (newProgress >= 100) {
+        clearLongPressTimer()
+        handleRemoveAccount()
+      }
+    }, PROGRESS_INTERVAL)
+  }
+
+  const handlePressEnd = () => {
+    setIsPressed(false)
+    clearLongPressTimer()
+    // Reset progress with a slight delay for better UX
+    setTimeout(() => {
+      setPressProgress(0)
+    }, 300)
+  }
+
+  const clearLongPressTimer = () => {
+    if (longPressTimer.current) {
+      clearInterval(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }
+
+  // Clean up timer on unmount or dialog close
+  useEffect(() => {
+    return () => {
+      clearLongPressTimer()
+    }
+  }, [])
+
+  // Reset state when dialog closes
+  const handleRemoveAccountDialogOpenChange = (open: boolean) => {
+    setIsRemoveAccountDialogOpen(open)
+    if (!open) {
+      setConfirmEmail("")
+      setConfirmEmailRepeat("")
+      clearLongPressTimer()
+      setPressProgress(0)
+      setIsPressed(false)
+    }
+  }
 
   const validateInviteCode = async (code: string): Promise<boolean> => {
     // Check if code exists in database
@@ -198,9 +292,13 @@ export default function SettingsPage() {
       setLoading(true)
       await sendEmailVerification(auth.currentUser!)
       toast.success("驗證信已重新發送")
-    } catch (err) {
-      toast.error("發送驗證信時發生錯誤")
+    } catch (err: any) {
       console.error(err)
+      if (err.code === 'auth/too-many-requests') {
+        toast.error("發送次數過多，請稍後再試")
+      } else {
+        toast.error("發送驗證信時發生錯誤")
+      }
     } finally {
       setLoading(false)
     }
@@ -350,6 +448,158 @@ export default function SettingsPage() {
     }
   }
 
+  const handlePasswordChange = async () => {
+    if (!auth.currentUser || !currentPassword || !newPassword) {
+      return
+    }
+
+    if (newPassword.length < 6) {
+      setPasswordError("新密碼必須至少有6個字符")
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("新密碼與確認密碼不符")
+      return
+    }
+
+    setPasswordError("") // Clear any previous errors
+    try {
+      setChangingPassword(true)
+      
+      // First, re-authenticate the user
+      const credential = EmailAuthProvider.credential(
+        auth.currentUser.email || "", 
+        currentPassword
+      )
+      
+      await reauthenticateWithCredential(auth.currentUser, credential)
+      
+      // Then update password
+      await updatePassword(auth.currentUser, newPassword)
+      
+      // Close dialog and clear form fields
+      setPasswordDialogOpen(false)
+      setCurrentPassword("")
+      setNewPassword("")
+      setConfirmPassword("")
+      
+      toast.success("密碼已成功更新")
+    } catch (error: any) {
+      console.error("Error updating password:", error)
+      
+      // Handle specific error cases
+      if (error.code === 'auth/wrong-password') {
+        setPasswordError("目前密碼輸入錯誤")
+      } else if (error.code === 'auth/requires-recent-login') {
+        setPasswordError("登入已過期，請重新登入後再嘗試")
+      } else if (error.code === 'auth/too-many-requests') {
+        setPasswordError("嘗試次數過多，請稍後再試或使用密碼重設功能")
+        // You could add a password reset option here if needed
+      } else {
+        setPasswordError("更新密碼時發生錯誤")
+      }
+    } finally {
+      setChangingPassword(false)
+    }
+  }
+
+  // Reset password form state when dialog closes
+  const handlePasswordDialogOpenChange = (open: boolean) => {
+    setPasswordDialogOpen(open)
+    if (!open) {
+      setCurrentPassword("")
+      setNewPassword("")
+      setConfirmPassword("")
+      setPasswordError("")
+    }
+  }
+
+  const handleRemoveAccount = async () => {
+    if (!user || !auth.currentUser) return
+    
+    // Verify email matches the user's email and both confirm fields match
+    if (confirmEmail !== user.email || confirmEmailRepeat !== user.email) {
+      toast.error("電子郵件地址不符合")
+      return
+    }
+
+    try {
+      setIsDeletingAccount(true)
+
+      // 1. First re-authenticate the user
+      const googleProvider = auth.currentUser.providerData.find(
+        provider => provider.providerId === 'google.com'
+      )
+
+      if (!googleProvider) {
+        // For email/password users, we need the current password
+        const credential = EmailAuthProvider.credential(
+          auth.currentUser.email || "",
+          currentPassword // We need to add this state and UI field
+        )
+        await reauthenticateWithCredential(auth.currentUser, credential)
+      }
+      
+      // 2. Update shops created by this user to mark creator as "unknown"
+      const shopsRef = collection(db, "shops")
+      const shopsQuery = query(shopsRef, where("createdBy", "==", user.uid))
+      const shopsSnapshot = await getDocs(shopsQuery)
+      
+      // Batch update all shops by this user
+      const batch = writeBatch(db)
+      shopsSnapshot.docs.forEach((shopDoc) => {
+        batch.update(shopDoc.ref, {
+          createdBy: "unknown",
+          updatedAt: new Date(),
+          updatedBy: "system_account_deletion"
+        })
+      })
+      
+      // 3. Delete user document from Firestore
+      const userRef = doc(db, "users", user.uid)
+      batch.delete(userRef)
+      
+      // Execute all Firestore operations
+      await batch.commit()
+
+      // 4. For Google-linked accounts, unlink before deletion
+      if (googleProvider) {
+        try {
+          await unlink(auth.currentUser, 'google.com')
+        } catch (unlinkError) {
+          console.error("Error unlinking Google provider:", unlinkError)
+          // Continue with deletion even if unlinking fails
+        }
+      }
+      
+      // 5. Delete the user authentication account
+      await deleteUser(auth.currentUser)
+      
+      // 6. Explicitly sign out to terminate the session
+      await signOut()
+      
+      // 7. Log out and redirect to homepage
+      toast.success("帳號已成功刪除")
+      router.push("/")
+      
+    } catch (error: any) {
+      console.error("Error removing account:", error)
+      
+      if (error.code === 'auth/requires-recent-login') {
+        // This shouldn't happen now since we re-authenticate first
+        toast.error("請重新登入後再嘗試刪除帳號")
+      } else if (error.code === 'auth/wrong-password') {
+        toast.error("密碼錯誤，請重試")
+      } else {
+        toast.error("刪除帳號時發生錯誤")
+      }
+    } finally {
+      setIsDeletingAccount(false)
+      setIsRemoveAccountDialogOpen(false)
+    }
+  }
+
   // Admin functionality
   const verifyShopsCounter = async () => {
     try {
@@ -491,6 +741,198 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+            
+            {/* Password change section - only for users without Google login */}
+            {auth.currentUser && !auth.currentUser.providerData.some(
+              provider => provider.providerId === "google.com"
+            ) && (
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <Label>密碼</Label>
+                  
+                </div>
+                <div className="flex items-center text-sm gap-2">
+                  <span className="text-muted-foreground">定期更改密碼可提高帳號安全性</span>
+                  <Dialog open={passwordDialogOpen} onOpenChange={handlePasswordDialogOpenChange}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm" className="flex items-center gap-1">
+                        <KeyRound className="h-4 w-4 mr-1" />
+                        更改密碼
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-[425px]">
+                      <DialogHeader>
+                        <DialogTitle>更改密碼</DialogTitle>
+                        <DialogDescription>
+                          為了安全，請輸入您當前的密碼以及新密碼。
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        {passwordError && (
+                          <div className="text-sm font-medium text-destructive">{passwordError}</div>
+                        )}
+                        <div className="space-y-2">
+                          <Label htmlFor="current-password">當前密碼</Label>
+                          <Input
+                            id="current-password"
+                            type="password"
+                            value={currentPassword}
+                            onChange={(e) => setCurrentPassword(e.target.value)}
+                            placeholder="輸入當前密碼"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="new-password">新密碼</Label>
+                          <Input
+                            id="new-password"
+                            type="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="至少 6 個字符"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="confirm-password">確認新密碼</Label>
+                          <Input
+                            id="confirm-password"
+                            type="password"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            placeholder="再次輸入新密碼"
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button 
+                          variant="outline" 
+                          onClick={() => setPasswordDialogOpen(false)}
+                        >
+                          取消
+                        </Button>
+                        <Button 
+                          onClick={handlePasswordChange}
+                          disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword}
+                        >
+                          {changingPassword ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              更新中...
+                            </>
+                          ) : (
+                            "更新密碼"
+                          )}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </div>
+            )}
+
+            {/* Account Removal Section - for all users */}
+            <div className="pt-4 mt-6 border-t border-muted">
+              <div className="space-y-2">
+                <Label className="text-destructive">危險操作區域</Label>
+                <div className="text-sm text-muted-foreground">
+                  刪除帳號將永久移除您的所有資料，此操作無法恢復
+                </div>
+                <Dialog open={isRemoveAccountDialogOpen} onOpenChange={handleRemoveAccountDialogOpenChange}>
+                  <DialogTrigger asChild>
+                    <Button 
+                      variant="destructive" 
+                      className="mt-2"
+                    >
+                      刪除帳號
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[425px]">
+                    <DialogHeader>
+                      <DialogTitle className="text-destructive">刪除帳號</DialogTitle>
+                      <DialogDescription>
+                        此操作將永久刪除您的帳號和所有相關資料，無法恢復。
+                        您建立的店家資訊將保留，但會標記為匿名創建。
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label>請輸入您的電子郵件地址以確認刪除</Label>
+                        <Input
+                          value={confirmEmail}
+                          onChange={(e) => setConfirmEmail(e.target.value)}
+                          placeholder={user?.email || "您的電子郵件"}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>再次輸入您的電子郵件地址</Label>
+                        <Input
+                          value={confirmEmailRepeat}
+                          onChange={(e) => setConfirmEmailRepeat(e.target.value)}
+                          placeholder={user?.email || "您的電子郵件"}
+                        />
+                      </div>
+                      {/* Add password field for non-Google users */}
+                      {auth.currentUser && !auth.currentUser.providerData.some(
+                        provider => provider.providerId === 'google.com'
+                      ) && (
+                        <div className="space-y-2">
+                          <Label>請輸入密碼以確認刪除</Label>
+                          <Input
+                            type="password"
+                            value={currentPassword}
+                            onChange={(e) => setCurrentPassword(e.target.value)}
+                            placeholder="輸入密碼"
+                          />
+                        </div>
+                      )}
+                      <div className="space-y-2 pt-2">
+                        <div className="flex justify-between text-sm">
+                          <span>長按確認刪除</span>
+                          <span>{Math.round(pressProgress)}%</span>
+                        </div>
+                        <Progress value={pressProgress} className={isPressed ? "bg-destructive/30" : ""} />
+                        <p className="text-xs text-muted-foreground mt-2">
+                          請按住下方按鈕直到進度條完成以確認刪除
+                        </p>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button 
+                        variant="outline" 
+                        onClick={() => setIsRemoveAccountDialogOpen(false)}
+                      >
+                        取消
+                      </Button>
+                      <Button 
+                        variant="destructive"
+                        disabled={
+                          isDeletingAccount || 
+                          confirmEmail !== user?.email || 
+                          confirmEmailRepeat !== user?.email ||
+                          (!auth.currentUser?.providerData.some(
+                            provider => provider.providerId === 'google.com'
+                          ) && !currentPassword) // Require password for non-Google users
+                        }
+                        onMouseDown={handlePressStart}
+                        onMouseUp={handlePressEnd}
+                        onMouseLeave={handlePressEnd}
+                        onTouchStart={handlePressStart}
+                        onTouchEnd={handlePressEnd}
+                        className={`transition-all ${isPressed ? 'bg-destructive/70' : ''}`}
+                      >
+                        {isDeletingAccount ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            刪除中...
+                          </>
+                        ) : (
+                          "長按確認刪除"
+                        )}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </div>
             </div>
           </CardContent>
