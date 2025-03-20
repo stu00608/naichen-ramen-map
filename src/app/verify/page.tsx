@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { toast } from "sonner"
 import { 
   applyActionCode, 
   confirmPasswordReset, 
@@ -19,8 +20,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, CheckCircle2, XCircle, AlertTriangle } from "lucide-react"
+import { Loader2, CheckCircle2, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 // Main content that will change based on mode
@@ -61,6 +61,7 @@ function AccountActionContent() {
       } catch (err) {
         console.error("Action code verification error:", err)
         setError(actionMode === "resetPassword" ? "此密碼重設連結已失效或已過期" : "此驗證連結已失效或已過期")
+        toast.error(actionMode === "resetPassword" ? "密碼重設連結無效" : "驗證連結無效")
       } finally {
         setIsProcessing(false)
       }
@@ -74,16 +75,19 @@ function AccountActionContent() {
     
     if (newPassword !== confirmPassword) {
       setError("密碼不一致")
+      toast.error("密碼不一致")
       return
     }
 
     if (newPassword.length < 6) {
       setError("密碼長度至少需要 6 個字元")
+      toast.error("密碼長度至少需要 6 個字元")
       return
     }
 
     if (!oobCode) {
       setError("無效的密碼重設連結")
+      toast.error("無效的密碼重設連結")
       return
     }
 
@@ -99,6 +103,7 @@ function AccountActionContent() {
     } catch (err) {
       console.error("Password reset error:", err)
       setError("重設密碼失敗，請重試")
+      toast.error("重設密碼失敗，請重試")
     } finally {
       setIsLoading(false)
     }
@@ -155,52 +160,59 @@ function AccountActionContent() {
             )}
           </CardHeader>
           <CardContent>
-            {error && (
+            {/* {error && (
               <Alert variant="destructive" className="mb-4">
                 <AlertDescription className="flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4" />
                   {error}
                 </AlertDescription>
               </Alert>
-            )}
-            {success && (
-              <Alert className="mb-4 bg-green-50 text-green-800">
-                <AlertDescription>{success}</AlertDescription>
-              </Alert>
-            )}
-            <form onSubmit={handlePasswordReset}>
-              <div className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="new-password">新密碼</Label>
-                  <Input
-                    id="new-password"
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    disabled={!!success}
-                    placeholder="至少 6 個字元"
-                  />
+            )} */}
+            {success ? (
+              <div className="flex flex-col items-center gap-4">
+                <CheckCircle2 className="h-16 w-16 text-green-600" />
+                <div className="text-center">
+                  <p className="font-semibold text-green-600">{success}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    請稍候，即將為您重新導向至登入頁面...
+                  </p>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="confirm-password">確認密碼</Label>
-                  <Input
-                    id="confirm-password"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    disabled={!!success}
-                  />
-                </div>
-                <Button 
-                  type="submit" 
-                  disabled={isLoading || !!success}
-                  className={cn(isLoading && "opacity-70")}
-                >
-                  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  重設密碼
-                </Button>
               </div>
-            </form>
+            ) : (
+              <form onSubmit={handlePasswordReset}>
+                <div className="grid gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="new-password">新密碼</Label>
+                    <Input
+                      id="new-password"
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      disabled={!!success}
+                      placeholder="至少 6 個字元"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="confirm-password">確認密碼</Label>
+                    <Input
+                      id="confirm-password"
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      disabled={!!success}
+                    />
+                  </div>
+                  <Button 
+                    type="submit" 
+                    disabled={isLoading || !!success}
+                    className={cn(isLoading && "opacity-70")}
+                  >
+                    {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    重設密碼
+                  </Button>
+                </div>
+              </form>
+            )}
           </CardContent>
         </Card>
       </div>

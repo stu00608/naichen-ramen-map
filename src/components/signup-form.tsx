@@ -51,7 +51,7 @@ export function SignUpForm({
     try {
       await signUp(email, password, inviteCode, displayName)
       // Redirect to the new email verification notice page
-      router.push("/verify-email/notice")
+      router.push("/verify/notice")
     } catch (err) {
       setError(err instanceof Error ? err.message : "註冊失敗")
     }
