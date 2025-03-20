@@ -6,6 +6,7 @@ import Link from "next/link"
 import { useAuth } from "@/contexts/auth-context"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 import {
   Card,
   CardContent,
@@ -53,7 +54,7 @@ export function LoginForm({
 
     try {
       await signIn(email, password)
-      router.push("/dashboard/shops")
+      router.push("/dashboard")
     } catch (err: any) {
       // If we get too many requests error, suggest password reset
       if (err?.code === 'auth/too-many-requests') {
@@ -70,7 +71,7 @@ export function LoginForm({
     setError("")
     try {
       await signInWithGoogle()
-      router.push("/dashboard/shops")
+      router.push("/dashboard")
     } catch (err: any) {
       if (err instanceof Error && err.message === 'NEEDS_INVITE_CODE') {
         setIsInviteDialogOpen(true)
@@ -88,7 +89,7 @@ export function LoginForm({
 
     try {
       await signUpWithGoogle(inviteCode)
-      router.push("/dashboard/shops")
+      router.push("/dashboard")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Google 註冊失敗")
     } finally {
@@ -106,7 +107,7 @@ export function LoginForm({
 
     try {
       await sendPasswordReset(resetEmail)
-      setSuccess("重設密碼信已發送，請查看您的電子郵件")
+      toast.success("重設密碼信已發送，請查看您的電子郵件")
       setIsResetDialogOpen(false)
       setResetEmail("")
     } catch (err: any) {

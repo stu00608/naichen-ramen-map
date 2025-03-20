@@ -6,6 +6,7 @@ import Link from "next/link"
 import { useAuth } from "@/contexts/auth-context"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 import {
   Card,
   CardContent,
@@ -50,7 +51,7 @@ export function SignUpForm({
 
     try {
       await signUp(email, password, inviteCode, displayName)
-      // Redirect to the new email verification notice page
+      toast.success("註冊成功！請查收驗證信")
       router.push("/verify/notice")
     } catch (err) {
       setError(err instanceof Error ? err.message : "註冊失敗")
@@ -67,8 +68,8 @@ export function SignUpForm({
 
     try {
       await signUpWithGoogle(inviteCode)
-      // Google sign-up typically doesn't require email verification
-      router.push("/dashboard/shops")
+      toast.success("註冊成功！")
+      router.push("/dashboard")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Google 註冊失敗")
     }

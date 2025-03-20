@@ -253,7 +253,7 @@ function AccountActionContent() {
               )}
               <div className="mt-6">
                 <Button 
-                  onClick={() => router.push("/dashboard/shops")}
+                  onClick={() => router.push("/dashboard")}
                   className="w-full"
                 >
                   進入應用程式
