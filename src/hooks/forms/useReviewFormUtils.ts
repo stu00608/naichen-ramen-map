@@ -11,6 +11,7 @@ interface ShopData {
   region?: string;
   address?: string;
   shop_types?: string[];
+  googleMapsUri?: string;
   // Add other fields as needed
 }
 
@@ -90,7 +91,8 @@ export function useReviewFormUtils() {
         country: typedShopData.country || "JP",
         region: typedShopData.region,
         address: typedShopData.address,
-        shop_types: typedShopData.shop_types
+        shop_types: typedShopData.shop_types,
+        googleMapsUri: typedShopData.googleMapsUri
       };
     } catch (error) {
       console.error("Error fetching shop data:", error);
@@ -182,16 +184,17 @@ export function useReviewFormUtils() {
       }
     }
 
-    // Create search content for searching
-    const searchContent = [
-      data.shop_name,
-      ...validRamenItems.map(item => item.name),
-      ...validSideMenuItems.map(item => item.name),
-      data.notes
-    ].filter(Boolean).join(" ");
+    // Create search tokens for searching
+    const searchTokens = [
+      ...(data.shop_name?.toLowerCase().split(/\s+/) || []),
+      ...validRamenItems.map(item => item.name.toLowerCase()),
+      ...validSideMenuItems.map(item => item.name.toLowerCase()),
+      ...(data.notes ? data.notes.toLowerCase().split(/\s+/) : [])
+    ].filter(Boolean);
 
     return {
       shop_id: data.shop_id,
+      shop_name: data.shop_name,
       visit_date: Timestamp.fromDate(data.visit_date),
       people_count: data.people_count,
       reservation_type: data.reservation_type,
@@ -209,8 +212,8 @@ export function useReviewFormUtils() {
       images: data.images || [],
       created_at: Timestamp.now(),
       updated_at: Timestamp.now(),
-      search_content: searchContent,
-      source: "自建" // Default source is self-created
+      searchTokens: searchTokens,
+      source: "" // Default source is self-created
     };
   };
 

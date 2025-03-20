@@ -63,7 +63,7 @@ export default function NewReviewPage() {
   
   const [searchQuery, setSearchQuery] = useState("")
   const [shopSearchResults, setShopSearchResults] = useState<any[]>([])
-  const [selectedShop, setSelectedShop] = useState<{id: string; name: string; country: string} | null>(null)
+  const [selectedShop, setSelectedShop] = useState<{id: string; name: string; country: string; address?: string; googleMapsUri?: string} | null>(null)
   const [showWaitTime, setShowWaitTime] = useState(false)
   const [defaultCurrency, setDefaultCurrency] = useState("JPY")
   const [isSearching, setIsSearching] = useState(false)
@@ -195,7 +195,13 @@ export default function NewReviewPage() {
       const shopData = await fetchShopData(shopId)
       
       if (shopData) {
-        setSelectedShop(shopData)
+        setSelectedShop({
+          id: shopData.id,
+          name: shopData.name,
+          country: shopData.country,
+          address: shopData.address,
+          googleMapsUri: shopData.googleMapsUri
+        })
         setValue("shop_id", shopData.id)
         setValue("shop_name", shopData.name)
         
