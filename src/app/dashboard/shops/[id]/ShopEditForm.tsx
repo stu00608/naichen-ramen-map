@@ -35,6 +35,17 @@ import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning"
 import { useGooglePlaceIdValidation } from "@/hooks/forms/useGooglePlaceIdValidation"
 import { useShopFormUtils, shopSchema, type ShopFormData } from "@/hooks/forms/useShopFormUtils"
 import { Tag, TagInput } from "@/components/ui/tag-input-wrapper"
+import { Search } from "lucide-react"
+import { ShopPreviewCard } from "@/components/shop-preview-card"
+import { toast } from "sonner"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
 
 interface BusinessHourPeriod {
   open: string
@@ -69,6 +80,11 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
   const [excludeBusinessHours, setExcludeBusinessHours] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [activeTagIndex, setActiveTagIndex] = useState<number | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [isSearching, setIsSearching] = useState(false)
+  const [selectedPlace, setSelectedPlace] = useState<any | null>(null)
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [confirmationTarget, setConfirmationTarget] = useState<string | null>(null)
 
   const { control, register, handleSubmit, setValue, watch, formState: { errors, isDirty }, reset } = useForm<ShopFormData>({
     resolver: zodResolver(shopSchema),
@@ -105,6 +121,16 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
         googleMapsUriRef.current = shop.googleMapsUri || null
         setExcludeBusinessHours(!shop.isBusinessHoursAvailable)
         setLastSearchedValue(shop.name)
+        
+        // Set the selected place to show in the preview card
+        const transformedPlace = {
+          id: shop.google_place_id || "",
+          name: shop.name,
+          address: shop.address,
+          country: shop.country,
+          googleMapsUri: shop.googleMapsUri || "",
+        }
+        setSelectedPlace(transformedPlace)
       }
     }
     fetchShop()
@@ -124,7 +150,8 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 
     if (isInputFocused && nameValue && nameValue.length >= 3 && nameValue !== lastSearchedValue) {
       searchTimeoutRef.current = setTimeout(() => {
-        searchPlaces(nameValue, countryValue)
+        setSearchQuery(nameValue)
+        searchPlaces()
         setShowPlacesResults(true)
         setLastSearchedValue(nameValue)
       }, 2000)
@@ -153,15 +180,18 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
     }
   }, [])
 
-  const searchPlaces = async (query: string, country: string) => {
+  const searchPlaces = async () => {
+    if (!searchQuery.trim()) return
+    
     try {
-      setSearchResults([])
+      setIsSearching(true)
+      
       const response = await fetch("/api/places/search", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query, country }),
+        body: JSON.stringify({ query: searchQuery, country: countryValue }),
       })
 
       if (!response.ok) {
@@ -171,20 +201,32 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
       const data = await response.json()
       if (Array.isArray(data.results)) {
         setSearchResults(data.results)
+        setShowPlacesResults(true)
       } else {
         setSearchResults([])
+        toast.info("沒有找到符合的店家")
       }
     } catch (err) {
       console.error("Places search error:", err)
       setSearchResults([])
+      toast.error("搜尋店家時發生錯誤")
+    } finally {
+      setIsSearching(false)
     }
   }
 
-  const handlePlaceSelect = (e: React.MouseEvent, place: any) => {
+  const handleSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      searchPlaces()
+    }
+  }
+
+  const handlePlaceSelect = async (e: React.MouseEvent, place: any) => {
     e.preventDefault()
     e.stopPropagation()
     
-    setValue("name", place.displayName.text)
+    setValue("name", place.displayName?.text || place.name || "")
 
     let cleanAddress = place.formattedAddress
     let region = ""
@@ -235,6 +277,15 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 
       setValue("business_hours", businessHours)
       setExcludeBusinessHours(false)
+
+      const transformedPlace = {
+        id: place.id,
+        name: place.displayName?.text || place.name || "",
+        address: cleanAddress || "",
+        country: countryValue,
+        googleMapsUri: place.googleMapsUri || "",
+      }
+      setSelectedPlace(transformedPlace)
     } else {
       setExcludeBusinessHours(true)
       setValue("business_hours", getDefaultBusinessHours())
@@ -247,6 +298,16 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
     googleMapsUriRef.current = place.googleMapsUri || null
     setShowPlacesResults(false)
     setSearchResults([])
+    setSearchQuery("")
+  }
+
+  const handlePlaceUnlink = () => {
+    setSelectedPlace(null)
+    setValue("name", "")
+    setValue("address", "")
+    setValue("google_place_id", "")
+    setSearchQuery("")
+    toast.info("已取消店家選擇")
   }
 
   const onSubmit = async (data: ShopFormData) => {
@@ -324,11 +385,21 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
     }
   }
 
+  const handleConfirmNavigation = () => {
+    setCancelDialogOpen(false)
+    if (confirmationTarget) {
+      router.push(confirmationTarget)
+      setConfirmationTarget(null)
+    }
+  }
+
   const handleCancel = () => {
     if (shouldBlock()) {
-      return
+      setConfirmationTarget("/dashboard/shops")
+      setCancelDialogOpen(true)
+    } else {
+      router.push("/dashboard/shops")
     }
-    router.push("/dashboard/shops")
   }
 
   const handleInputFocus = () => {
@@ -338,7 +409,8 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
         clearTimeout(searchTimeoutRef.current)
       }
       searchTimeoutRef.current = setTimeout(() => {
-        searchPlaces(nameValue, countryValue)
+        setSearchQuery(nameValue)
+        searchPlaces()
         setShowPlacesResults(true)
       }, 2000)
     }
@@ -390,39 +462,66 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
           <div className="col-span-4 relative" ref={searchContainerRef}>
             <div className="space-y-2">
               <Label htmlFor="name" className="text-lg">店名 <span className="text-destructive">*</span></Label>
-              <Input
-                id="name"
-                {...register("name")}
-                placeholder="輸入店名搜尋..."
-                onFocus={handleInputFocus}
-                onBlur={handleInputBlur}
-              />
-            </div>
-            {showPlacesResults && searchResults.length > 0 && (
-              <div className="absolute z-50 w-full mt-1 rounded-lg border bg-popover text-popover-foreground shadow-md">
-                <div className="p-0">
-                  <div className="max-h-[200px] overflow-auto">
-                    {searchResults.map((place) => (
-                      <button
-                        key={place.id}
-                        onClick={(e) => handlePlaceSelect(e, place)}
-                        type="button"
-                        className="w-full px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground rounded-lg"
-                      >
-                        <div className="flex flex-col gap-1">
-                          <div className="font-medium">{place.displayName.text}</div>
-                          <div className="text-sm text-muted-foreground">{place.formattedAddress}</div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+              {selectedPlace ? (
+                <div>
+                  <ShopPreviewCard 
+                    shop={selectedPlace} 
+                    onUnlink={handlePlaceUnlink} 
+                  />
+                  {errors.name && (
+                    <p className="mt-2 text-sm text-destructive">{errors.name.message}</p>
+                  )}
                 </div>
-              </div>
-            )}
-            {errors.name && (
-              <p className="mt-2 text-sm text-destructive">{errors.name.message}</p>
-            )}
+              ) : (
+                <>
+                  <div className="flex gap-2">
+                    <Input
+                      id="name"
+                      placeholder={isSearching ? "搜尋店家中..." : "輸入店名搜尋..."}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyPress={handleSearchKeyPress}
+                      className="flex-1 h-10"
+                      disabled={isSearching}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={searchPlaces}
+                      disabled={isSearching}
+                    >
+                      <Search className="h-4 w-4 mr-2" />
+                      搜尋
+                    </Button>
+                  </div>
+                  {showPlacesResults && searchResults.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 rounded-lg border bg-popover text-popover-foreground shadow-md">
+                      <div className="p-0">
+                        <div className="max-h-[200px] overflow-auto">
+                          {searchResults.map((place) => (
+                            <button
+                              key={place.id}
+                              onClick={(e) => handlePlaceSelect(e, place)}
+                              type="button"
+                              className="w-full px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground rounded-lg"
+                            >
+                              <div className="flex flex-col gap-1">
+                                <div className="font-medium">{place.displayName.text}</div>
+                                <div className="text-sm text-muted-foreground">{place.formattedAddress}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
+
+          {/* Hidden Input for name field */}
+          <input type="hidden" {...register("name")} />
 
           {/* 國家 & 區域 */}
           <div className="col-span-2 space-y-2">
@@ -683,6 +782,33 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
           </div>
         </div>
       </form>
+
+      {/* Cancel Confirmation Dialog */}
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>確認離開頁面</DialogTitle>
+            <DialogDescription>
+              您有未儲存的更改，確定要離開嗎？
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex space-x-2 justify-end">
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => setCancelDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button 
+              type="button"
+              onClick={handleConfirmNavigation}
+            >
+              確認離開
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

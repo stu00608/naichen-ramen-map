@@ -14,6 +14,7 @@ interface ShopPreviewCardProps {
     address?: string;
     description?: string;
     country?: string;
+    googleMapsUri?: string;
   };
   onUnlink: () => void;
 }
@@ -24,24 +25,39 @@ export function ShopPreviewCard({ shop, onUnlink }: ShopPreviewCardProps) {
       <div className="flex-1 truncate ml-2">
         <HoverCard>
           <HoverCardTrigger asChild>
-            <span className="font-medium cursor-pointer hover:underline text-primary truncate">
-              {shop.name}
-            </span>
+            <div className="flex items-center gap-1">
+              <span className="font-medium cursor-pointer hover:underline text-primary truncate">
+                {shop.name}
+              </span>
+            </div>
           </HoverCardTrigger>
           <HoverCardContent className="w-80">
             <div className="space-y-2">
-              <h4 className="text-sm font-semibold">{shop.name}</h4>
+              <h4 className="text-sm font-semibold">{shop.name}
+                {shop.googleMapsUri && (
+                  <a
+                    href={shop.googleMapsUri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-muted-foreground hover:text-primary ml-1"
+                    title="在 Google Maps 查看"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    ↗︎
+                  </a>
+                )}
+              </h4>
               {shop.address && (
                 <p className="text-sm text-muted-foreground">{shop.address}</p>
               )}
-              {shop.description && (
+              {/* {shop.description && (
                 <p className="text-sm text-muted-foreground">{shop.description}</p>
               )}
               {shop.country && (
                 <p className="text-xs text-muted-foreground">
                   國家: {shop.country}
                 </p>
-              )}
+              )} */}
             </div>
           </HoverCardContent>
         </HoverCard>

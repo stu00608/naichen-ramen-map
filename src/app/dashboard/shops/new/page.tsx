@@ -33,6 +33,9 @@ import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning"
 import { useGooglePlaceIdValidation } from "@/hooks/forms/useGooglePlaceIdValidation"
 import { useShopFormUtils, shopSchema, type ShopFormData } from "@/hooks/forms/useShopFormUtils"
 import { Tag, TagInput } from "@/components/ui/tag-input-wrapper"
+import { Search } from "lucide-react"
+import { ShopPreviewCard } from "@/components/shop-preview-card"
+import { url } from "inspector"
 
 interface BusinessHourPeriod {
   open: string
@@ -52,12 +55,13 @@ export default function NewShopPage() {
   const router = useRouter()
   const [selectedCountry, setSelectedCountry] = useState<keyof typeof REGIONS>("JP")
   const locationRef = useRef<GeoPoint | null>(null)
-  const [lastSearchedValue, setLastSearchedValue] = useState("")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [isSearching, setIsSearching] = useState(false)
   const [showPlacesResults, setShowPlacesResults] = useState(false)
   const [searchResults, setSearchResults] = useState<any[]>([])
+  const [selectedPlace, setSelectedPlace] = useState<any | null>(null)
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const searchContainerRef = useRef<HTMLDivElement>(null)
-  const [isInputFocused, setIsInputFocused] = useState(false)
   const [excludeBusinessHours, setExcludeBusinessHours] = useState(false)
   const googleMapsUriRef = useRef<string | null>(null)
   const [tags, setTags] = useState<Tag[]>([])
@@ -169,29 +173,6 @@ export default function NewShopPage() {
   }, [countryValue, selectedCountry, setValue])
 
   useEffect(() => {
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current)
-    }
-
-    if (isInputFocused && nameValue && nameValue.length >= 3 && nameValue !== lastSearchedValue) {
-      searchTimeoutRef.current = setTimeout(() => {
-        searchPlaces(nameValue, countryValue)
-        setShowPlacesResults(true)
-        setLastSearchedValue(nameValue)
-      }, 2000)
-    } else if (!nameValue || nameValue.length < 3) {
-      setShowPlacesResults(false)
-      setSearchResults([])
-    }
-
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current)
-      }
-    }
-  }, [nameValue, countryValue, isInputFocused, lastSearchedValue])
-
-  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
         setShowPlacesResults(false)
@@ -209,15 +190,18 @@ export default function NewShopPage() {
     router.push("/dashboard/shops")
   }
 
-  const searchPlaces = async (query: string, country: string) => {
+  const searchPlaces = async () => {
+    if (!searchQuery.trim()) return
+    
     try {
-      setSearchResults([])
+      setIsSearching(true)
+      
       const response = await fetch("/api/places/search", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query, country }),
+        body: JSON.stringify({ query: searchQuery, country: countryValue }),
       })
 
       if (!response.ok) {
@@ -227,20 +211,46 @@ export default function NewShopPage() {
       const data = await response.json()
       if (Array.isArray(data.results)) {
         setSearchResults(data.results)
+        setShowPlacesResults(true)
       } else {
         setSearchResults([])
+        toast.info("沒有找到符合的店家")
       }
     } catch (err) {
       console.error("Places search error:", err)
       setSearchResults([])
+      toast.error("搜尋店家時發生錯誤")
+    } finally {
+      setIsSearching(false)
     }
   }
 
-  const handlePlaceSelect = (e: React.MouseEvent, place: any) => {
+  // Handle Enter key press for search
+  const handleSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      searchPlaces()
+    }
+  }
+
+  const handlePlaceSelect = async (e: React.MouseEvent, place: any) => {
     e.preventDefault()
     e.stopPropagation()
 
-    setValue("name", place.displayName.text)
+    // Check if this Google Place ID is already registered
+    if (place.id) {
+      try {
+        const exists = await checkDocumentExists('google_place_id', place.id)
+        if (exists) {
+          toast.error("此店家已經在資料庫中註冊了")
+          return
+        }
+      } catch (err) {
+        console.error("Error checking place existence:", err)
+      }
+    }
+
+    setValue("name", place.displayName?.text || place.name || "")
 
     let cleanAddress = place.formattedAddress
     let region = ""
@@ -291,6 +301,18 @@ export default function NewShopPage() {
 
       setValue("business_hours", businessHours)
       setExcludeBusinessHours(false)
+
+      // Transform the place object to match ShopPreviewCard expected structure
+      const transformedPlace = {
+        id: place.id,
+        name: place.displayName?.text || place.name || "",
+        address: cleanAddress || "",
+        country: countryValue,
+        googleMapsUri: place.googleMapsUri || "",
+      }
+      // Set selectedPlace state with transformed object
+      setSelectedPlace(transformedPlace)
+
     } else {
       setExcludeBusinessHours(true)
       setValue("business_hours", getDefaultBusinessHours())
@@ -303,6 +325,17 @@ export default function NewShopPage() {
     googleMapsUriRef.current = place.googleMapsUri || null
     setShowPlacesResults(false)
     setSearchResults([])
+    setSearchQuery("") // Clear the search query after selection
+  }
+
+  // Function to handle place unlink/removing selection
+  const handlePlaceUnlink = () => {
+    setSelectedPlace(null)
+    setValue("name", "")
+    setValue("address", "")
+    setValue("google_place_id", "")
+    setSearchQuery("")
+    toast.info("已取消店家選擇")
   }
 
   const onSubmit = async (data: ShopFormData) => {
@@ -393,27 +426,6 @@ export default function NewShopPage() {
     }
   };
 
-  const handleInputFocus = () => {
-    setIsInputFocused(true)
-    if (nameValue && nameValue.length >= 3) {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current)
-      }
-      searchTimeoutRef.current = setTimeout(() => {
-        searchPlaces(nameValue, countryValue)
-        setShowPlacesResults(true)
-      }, 2000)
-    }
-  }
-
-  const handleInputBlur = () => {
-    setIsInputFocused(false)
-    setTimeout(() => {
-      if (!searchContainerRef.current?.contains(document.activeElement)) {
-        setShowPlacesResults(false)
-      }
-    }, 200)
-  }
 
   const handleClearForm = () => {
     if (isDirty) {
@@ -438,6 +450,7 @@ export default function NewShopPage() {
     setExcludeBusinessHours(false)
     locationRef.current = null
     googleMapsUriRef.current = null
+    setSelectedPlace(null)
     toast.success("已清除所有資料")
   }
 
@@ -457,39 +470,69 @@ export default function NewShopPage() {
           <div className="col-span-4 relative" ref={searchContainerRef}>
             <div className="space-y-2">
               <Label htmlFor="name" className="text-lg">店名 <span className="text-destructive">*</span></Label>
-              <Input
-                id="name"
-                {...register("name")}
-                placeholder="輸入店名搜尋..."
-                onFocus={handleInputFocus}
-                onBlur={handleInputBlur}
-              />
-            </div>
-            {showPlacesResults && searchResults.length > 0 && (
-              <div className="absolute z-50 w-full mt-1 rounded-lg border bg-popover text-popover-foreground shadow-md">
-                <div className="p-0">
-                  <div className="max-h-[200px] overflow-auto">
-                    {searchResults.map((place) => (
-                      <button
-                        key={place.id}
-                        onClick={(e) => handlePlaceSelect(e, place)}
-                        type="button"
-                        className="w-full px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground rounded-lg"
-                      >
-                        <div className="flex flex-col gap-1">
-                          <div className="font-medium">{place.displayName.text}</div>
-                          <div className="text-sm text-muted-foreground">{place.formattedAddress}</div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+              {selectedPlace ? (
+                <div>
+                  <ShopPreviewCard 
+                    shop={selectedPlace} 
+                    onUnlink={handlePlaceUnlink} 
+                  />
+                  {errors.name && (
+                    <p className="mt-2 text-sm text-destructive">{errors.name.message}</p>
+                  )}
                 </div>
-              </div>
-            )}
-            {errors.name && (
-              <p className="mt-2 text-sm text-destructive">{errors.name.message}</p>
-            )}
+              ) : (
+                <>
+                  <div className="flex gap-2">
+                    <Input
+                      id="name"
+                      placeholder={isSearching ? "搜尋店家中..." : "輸入店名搜尋..."}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyPress={handleSearchKeyPress}
+                      className="flex-1 h-10"
+                      disabled={isSearching}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={searchPlaces}
+                      disabled={isSearching}
+                    >
+                      <Search className="h-4 w-4 mr-2" />
+                      搜尋
+                    </Button>
+                  </div>
+                  {showPlacesResults && searchResults.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 rounded-lg border bg-popover text-popover-foreground shadow-md">
+                      <div className="p-0">
+                        <div className="max-h-[200px] overflow-auto">
+                          {searchResults.map((place) => (
+                            <button
+                              key={place.id}
+                              onClick={(e) => handlePlaceSelect(e, place)}
+                              type="button"
+                              className="w-full px-3 py-2 text-left hover:bg-accent hover:text-accent-foreground rounded-lg"
+                            >
+                              <div className="flex flex-col gap-1">
+                                <div className="font-medium">{place.displayName.text}</div>
+                                <div className="text-sm text-muted-foreground">{place.formattedAddress}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {errors.name && (
+                    <p className="mt-2 text-sm text-destructive">{errors.name.message}</p>
+                  )}
+                </>
+              )}
+            </div>
           </div>
+
+          {/* Hidden Input for name field */}
+          <input type="hidden" {...register("name")} />
 
           {/* 國家 & 區域 */}
           <div className="col-span-2 space-y-2">

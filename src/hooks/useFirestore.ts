@@ -86,19 +86,18 @@ export function useFirestore(collectionName: string) {
   };
 
   // Check if document exists by field value
-  const checkDocumentExists = async (field: string, value: any) => {
-    setLoading(true);
-    setError(null);
-
+  const checkDocumentExists = async (fieldName: string, fieldValue: any) => {
     try {
-      const q = query(collection(db, collectionName), where(field, '==', value), limit(1));
+      const q = query(
+        collection(db, collectionName),
+        where(fieldName, "==", fieldValue),
+        limit(1)
+      );
       const querySnapshot = await getDocs(q);
-      setLoading(false);
       return !querySnapshot.empty;
-    } catch (err: any) {
-      setError(err.message);
-      setLoading(false);
-      return false;
+    } catch (err) {
+      console.error("Error checking document existence:", err);
+      throw err;
     }
   };
 

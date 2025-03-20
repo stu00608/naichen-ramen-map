@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/pagination"
 import { Input } from "@/components/ui/input"
 import { Search, X } from "lucide-react"
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 
 export default function ShopsPage() {
   const [shops, setShops] = useState<Shop[]>([])
@@ -101,35 +102,81 @@ export default function ShopsPage() {
       setLoading(true)
       const baseQuery = collection(db, "shops")
       
-      let q
-      if (debouncedSearchTerm) {
-        const searchLower = debouncedSearchTerm.toLowerCase()
-        q = query(
-          baseQuery,
-          where("searchTokens", "array-contains", searchLower),
-          orderBy("created_at", "desc"),
-          startAfter(pageSnapshots[page - 1]),
-          limit(itemsPerPage)
-        )
+      if (page < currentPage) {
+        // Going backwards - use the stored snapshot
+        const snapshot = pageSnapshots[page - 2] // Use the last doc of the previous page
+        let q
+        if (debouncedSearchTerm) {
+          const searchLower = debouncedSearchTerm.toLowerCase()
+          q = query(
+            baseQuery,
+            where("searchTokens", "array-contains", searchLower),
+            orderBy("created_at", "desc"),
+            snapshot ? startAfter(snapshot) : limit(itemsPerPage),
+            limit(itemsPerPage)
+          )
+        } else {
+          q = query(
+            baseQuery,
+            orderBy("created_at", "desc"),
+            snapshot ? startAfter(snapshot) : limit(itemsPerPage),
+            limit(itemsPerPage)
+          )
+        }
+
+        const querySnapshot = await getDocs(q)
+        if (!querySnapshot.empty) {
+          const shopsData: Shop[] = []
+          querySnapshot.forEach((doc) => {
+            shopsData.push({ id: doc.id, ...doc.data() } as Shop)
+          })
+
+          setShops(shopsData)
+          setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1])
+          setFirstVisible(querySnapshot.docs[0])
+          setCurrentPage(page)
+        }
       } else {
-        q = query(
-          baseQuery,
-          orderBy("created_at", "desc"),
-          startAfter(pageSnapshots[page - 1]),
-          limit(itemsPerPage)
-        )
+        // Going forwards - get new data
+        let lastSnapshotToUse = pageSnapshots[page - 2] // Use the last doc of the previous page
+        let q
+        if (debouncedSearchTerm) {
+          const searchLower = debouncedSearchTerm.toLowerCase()
+          q = query(
+            baseQuery,
+            where("searchTokens", "array-contains", searchLower),
+            orderBy("created_at", "desc"),
+            lastSnapshotToUse ? startAfter(lastSnapshotToUse) : limit(itemsPerPage),
+            limit(itemsPerPage)
+          )
+        } else {
+          q = query(
+            baseQuery,
+            orderBy("created_at", "desc"),
+            lastSnapshotToUse ? startAfter(lastSnapshotToUse) : limit(itemsPerPage),
+            limit(itemsPerPage)
+          )
+        }
+
+        const querySnapshot = await getDocs(q)
+        if (!querySnapshot.empty) {
+          const shopsData: Shop[] = []
+          querySnapshot.forEach((doc) => {
+            shopsData.push({ id: doc.id, ...doc.data() } as Shop)
+          })
+
+          setShops(shopsData)
+          setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1])
+          setFirstVisible(querySnapshot.docs[0])
+          setCurrentPage(page)
+          // Store the last document of the current page
+          setPageSnapshots(prev => {
+            const newSnapshots = [...prev]
+            newSnapshots[page - 1] = querySnapshot.docs[querySnapshot.docs.length - 1]
+            return newSnapshots
+          })
+        }
       }
-
-      const querySnapshot = await getDocs(q)
-      const shopsData: Shop[] = []
-      querySnapshot.forEach((doc) => {
-        shopsData.push({ id: doc.id, ...doc.data() } as Shop)
-      })
-
-      setShops(shopsData)
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1])
-      setFirstVisible(querySnapshot.docs[0])
-      setCurrentPage(page)
     } catch (error) {
       console.error("Error fetching page:", error)
     } finally {
@@ -146,7 +193,6 @@ export default function ShopsPage() {
       let q
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase()
-        // Use searchTokens for more flexible matching
         q = query(
           baseQuery,
           where("searchTokens", "array-contains", searchLower),
@@ -179,15 +225,25 @@ export default function ShopsPage() {
 
       // Get paginated results
       const querySnapshot = await getDocs(q)
-      const shopsData: Shop[] = []
-      querySnapshot.forEach((doc) => {
-        shopsData.push({ id: doc.id, ...doc.data() } as Shop)
-      })
-      
-      setShops(shopsData)
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1])
-      setFirstVisible(querySnapshot.docs[0])
-      setPageSnapshots([querySnapshot.docs[0]])
+      if (!querySnapshot.empty) {
+        const shopsData: Shop[] = []
+        querySnapshot.forEach((doc) => {
+          shopsData.push({ id: doc.id, ...doc.data() } as Shop)
+        })
+        
+        setShops(shopsData)
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1])
+        setFirstVisible(querySnapshot.docs[0])
+        // Store the last document of the first page
+        setPageSnapshots([querySnapshot.docs[querySnapshot.docs.length - 1]])
+        setCurrentPage(1)
+      } else {
+        setShops([])
+        setLastVisible(null)
+        setFirstVisible(null)
+        setPageSnapshots([])
+        setCurrentPage(1)
+      }
     } catch (error) {
       console.error("Error fetching shops:", error)
     } finally {
@@ -222,16 +278,19 @@ export default function ShopsPage() {
       }
 
       const querySnapshot = await getDocs(q)
-      const shopsData: Shop[] = []
-      querySnapshot.forEach((doc) => {
-        shopsData.push({ id: doc.id, ...doc.data() } as Shop)
-      })
+      if (!querySnapshot.empty) {
+        const shopsData: Shop[] = []
+        querySnapshot.forEach((doc) => {
+          shopsData.push({ id: doc.id, ...doc.data() } as Shop)
+        })
 
-      setShops(shopsData)
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1])
-      setFirstVisible(querySnapshot.docs[0])
-      setCurrentPage(prev => prev + 1)
-      setPageSnapshots(prev => [...prev, querySnapshot.docs[0]])
+        setShops(shopsData)
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1])
+        setFirstVisible(querySnapshot.docs[0])
+        setCurrentPage(prev => prev + 1)
+        // Store the last document of the current page
+        setPageSnapshots(prev => [...prev, querySnapshot.docs[querySnapshot.docs.length - 1]])
+      }
     } catch (error) {
       console.error("Error fetching next page:", error)
     } finally {
@@ -246,6 +305,7 @@ export default function ShopsPage() {
       setLoading(true)
       const baseQuery = collection(db, "shops")
       
+      const prevPageSnapshot = pageSnapshots[currentPage - 3] // Use the last doc of the page before the previous page
       let q
       if (debouncedSearchTerm) {
         const searchLower = debouncedSearchTerm.toLowerCase()
@@ -253,28 +313,30 @@ export default function ShopsPage() {
           baseQuery,
           where("searchTokens", "array-contains", searchLower),
           orderBy("created_at", "desc"),
-          startAfter(pageSnapshots[currentPage - 2]),
+          prevPageSnapshot ? startAfter(prevPageSnapshot) : limit(itemsPerPage),
           limit(itemsPerPage)
         )
       } else {
         q = query(
           baseQuery,
           orderBy("created_at", "desc"),
-          startAfter(pageSnapshots[currentPage - 2]),
+          prevPageSnapshot ? startAfter(prevPageSnapshot) : limit(itemsPerPage),
           limit(itemsPerPage)
         )
       }
 
       const querySnapshot = await getDocs(q)
-      const shopsData: Shop[] = []
-      querySnapshot.forEach((doc) => {
-        shopsData.push({ id: doc.id, ...doc.data() } as Shop)
-      })
+      if (!querySnapshot.empty) {
+        const shopsData: Shop[] = []
+        querySnapshot.forEach((doc) => {
+          shopsData.push({ id: doc.id, ...doc.data() } as Shop)
+        })
 
-      setShops(shopsData)
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1])
-      setFirstVisible(querySnapshot.docs[0])
-      setCurrentPage(prev => prev - 1)
+        setShops(shopsData)
+        setLastVisible(querySnapshot.docs[querySnapshot.docs.length - 1])
+        setFirstVisible(querySnapshot.docs[0])
+        setCurrentPage(prev => prev - 1)
+      }
     } catch (error) {
       console.error("Error fetching previous page:", error)
     } finally {
@@ -285,7 +347,7 @@ export default function ShopsPage() {
   // Fetch shops when search term or page changes
   useEffect(() => {
     fetchShops(debouncedSearchTerm)
-  }, [debouncedSearchTerm, currentPage, itemsPerPage])
+  }, [debouncedSearchTerm, itemsPerPage])
 
   const clearSearch = () => {
     setSearchTerm("")
@@ -375,20 +437,27 @@ export default function ShopsPage() {
                 {shops.map((shop) => (
                   <TableRow key={shop.id}>
                     <TableCell>
-                      <div className="font-medium flex items-center gap-2">
-                        {shop.name}
-                        {shop.googleMapsUri && (
-                          <a
-                            href={shop.googleMapsUri}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-muted-foreground hover:text-primary"
-                          >
-                            ↗︎
-                          </a>
-                        )}
-                      </div>
-                      <div className="text-sm text-muted-foreground">{shop.address}</div>
+                      <HoverCard>
+                        <HoverCardTrigger className="cursor-default">
+                          {shop.name}
+                        </HoverCardTrigger>
+                        <HoverCardContent className="w-80">
+                          <div className="space-y-2">
+                            <p className="text-sm text-muted-foreground">{shop.address}</p>
+                            {shop.googleMapsUri && (
+                              <a
+                                href={shop.googleMapsUri}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm text-primary hover:underline inline-flex items-center gap-1"
+                              >
+                                在 Google Maps 開啟
+                                <span className="text-xs">↗︎</span>
+                              </a>
+                            )}
+                          </div>
+                        </HoverCardContent>
+                      </HoverCard>
                     </TableCell>
                     <TableCell>{shop.region}</TableCell>
                     <TableCell>
