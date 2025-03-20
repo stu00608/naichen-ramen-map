@@ -643,7 +643,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className={`grid grid-cols-1 ${isAdmin ? 'md:grid-cols-2' : 'md:grid-cols-1'} gap-6`}>
         <Card>
           <CardHeader>
             <CardTitle>帳號資訊</CardTitle>
@@ -830,111 +830,6 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
-
-            {/* Account Removal Section - for all users */}
-            <div className="pt-4 mt-6 border-t border-muted">
-              <div className="space-y-2">
-                <Label className="text-destructive">危險操作區域</Label>
-                <div className="text-sm text-muted-foreground">
-                  刪除帳號將永久移除您的所有資料，此操作無法恢復
-                </div>
-                <Dialog open={isRemoveAccountDialogOpen} onOpenChange={handleRemoveAccountDialogOpenChange}>
-                  <DialogTrigger asChild>
-                    <Button 
-                      variant="destructive" 
-                      className="mt-2"
-                    >
-                      刪除帳號
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="sm:max-w-[425px]">
-                    <DialogHeader>
-                      <DialogTitle className="text-destructive">刪除帳號</DialogTitle>
-                      <DialogDescription>
-                        此操作將永久刪除您的帳號和所有相關資料，無法恢復。
-                        您建立的店家資訊將保留，但會標記為匿名創建。
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-2">
-                        <Label>請輸入您的電子郵件地址以確認刪除</Label>
-                        <Input
-                          value={confirmEmail}
-                          onChange={(e) => setConfirmEmail(e.target.value)}
-                          placeholder={user?.email || "您的電子郵件"}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>再次輸入您的電子郵件地址</Label>
-                        <Input
-                          value={confirmEmailRepeat}
-                          onChange={(e) => setConfirmEmailRepeat(e.target.value)}
-                          placeholder={user?.email || "您的電子郵件"}
-                        />
-                      </div>
-                      {/* Add password field for non-Google users */}
-                      {auth.currentUser && !auth.currentUser.providerData.some(
-                        provider => provider.providerId === 'google.com'
-                      ) && (
-                        <div className="space-y-2">
-                          <Label>請輸入密碼以確認刪除</Label>
-                          <Input
-                            type="password"
-                            value={currentPassword}
-                            onChange={(e) => setCurrentPassword(e.target.value)}
-                            placeholder="輸入密碼"
-                          />
-                        </div>
-                      )}
-                      <div className="space-y-2 pt-2">
-                        <div className="flex justify-between text-sm">
-                          <span>長按確認刪除</span>
-                          <span>{Math.round(pressProgress)}%</span>
-                        </div>
-                        <Progress value={pressProgress} className={isPressed ? "bg-destructive/30" : ""} />
-                        <p className="text-xs text-muted-foreground mt-2">
-                          請按住下方按鈕直到進度條完成以確認刪除
-                        </p>
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button 
-                        variant="outline" 
-                        onClick={() => setIsRemoveAccountDialogOpen(false)}
-                      >
-                        取消
-                      </Button>
-                      <Button 
-                        variant="destructive"
-                        disabled={
-                          isDeletingAccount || 
-                          confirmEmail !== user?.email || 
-                          confirmEmailRepeat !== user?.email ||
-                          (!auth.currentUser?.providerData.some(
-                            provider => provider.providerId === 'google.com'
-                          ) && !currentPassword) // Require password for non-Google users
-                        }
-                        onMouseDown={handlePressStart}
-                        onMouseUp={handlePressEnd}
-                        onMouseLeave={handlePressEnd}
-                        onTouchStart={handlePressStart}
-                        onTouchEnd={handlePressEnd}
-                        className={`transition-all ${isPressed ? 'bg-destructive/70' : ''}`}
-                      >
-                        {isDeletingAccount ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            刪除中...
-                          </>
-                        ) : (
-                          "長按確認刪除"
-                        )}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </div>
           </CardContent>
         </Card>
 
@@ -973,6 +868,8 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         )}
+
+        
       </div>
 
       {isAdmin && (
@@ -1227,6 +1124,117 @@ export default function SettingsPage() {
           </Card>
         </>
       )}
+
+
+
+    {/* Account Removal Card - separate card for dangerous operations */}
+    <Card className="border-destructive/50">
+      <CardHeader>
+        <CardTitle className="text-destructive">帳號刪除</CardTitle>
+        <CardDescription>刪除帳號將永久移除您的所有資料，此操作無法恢復。您建立的店家資訊將保留，但會標記為匿名創建。</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <Dialog open={isRemoveAccountDialogOpen} onOpenChange={handleRemoveAccountDialogOpenChange}>
+            <DialogTrigger asChild>
+              <Button 
+                variant="destructive" 
+                className="mt-2"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                刪除帳號
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle className="text-destructive">刪除帳號</DialogTitle>
+                <DialogDescription>
+                  此操作將永久刪除您的帳號和所有相關資料，無法恢復。
+                  您建立的店家資訊將保留，但會標記為匿名創建。
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>請輸入您的電子郵件地址以確認刪除</Label>
+                  <Input
+                    value={confirmEmail}
+                    onChange={(e) => setConfirmEmail(e.target.value)}
+                    placeholder={user?.email || "您的電子郵件"}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>再次輸入您的電子郵件地址</Label>
+                  <Input
+                    value={confirmEmailRepeat}
+                    onChange={(e) => setConfirmEmailRepeat(e.target.value)}
+                    placeholder={user?.email || "您的電子郵件"}
+                  />
+                </div>
+                {/* Add password field for non-Google users */}
+                {auth.currentUser && !auth.currentUser.providerData.some(
+                  provider => provider.providerId === 'google.com'
+                ) && (
+                  <div className="space-y-2">
+                    <Label>請輸入密碼以確認刪除</Label>
+                    <Input
+                      type="password"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="輸入密碼"
+                    />
+                  </div>
+                )}
+                <div className="space-y-2 pt-2">
+                  <div className="flex justify-between text-sm">
+                    <span>長按確認刪除</span>
+                    <span>{Math.round(pressProgress)}%</span>
+                  </div>
+                  <Progress value={pressProgress} className={isPressed ? "bg-destructive/30" : ""} />
+                  <p className="text-xs text-muted-foreground mt-2">
+                    請按住下方按鈕直到進度條完成以確認刪除
+                  </p>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsRemoveAccountDialogOpen(false)}
+                >
+                  取消
+                </Button>
+                <Button 
+                  variant="destructive"
+                  disabled={
+                    isDeletingAccount || 
+                    confirmEmail !== user?.email || 
+                    confirmEmailRepeat !== user?.email ||
+                    (!auth.currentUser?.providerData.some(
+                      provider => provider.providerId === 'google.com'
+                    ) && !currentPassword) // Require password for non-Google users
+                  }
+                  onMouseDown={handlePressStart}
+                  onMouseUp={handlePressEnd}
+                  onMouseLeave={handlePressEnd}
+                  onTouchStart={handlePressStart}
+                  onTouchEnd={handlePressEnd}
+                  className={`transition-all ${isPressed ? 'bg-destructive/70' : ''}`}
+                >
+                  {isDeletingAccount ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      刪除中...
+                    </>
+                  ) : (
+                    "長按確認刪除"
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </CardContent>
+    </Card>
+
     </div>
   )
 }
