@@ -138,7 +138,7 @@ export default function ShopsPage() {
         }
       } else {
         // Going forwards - get new data
-        let lastSnapshotToUse = pageSnapshots[page - 2] // Use the last doc of the previous page
+        const lastSnapshotToUse = pageSnapshots[page - 2] // Use the last doc of the previous page
         let q
         if (debouncedSearchTerm) {
           const searchLower = debouncedSearchTerm.toLowerCase()

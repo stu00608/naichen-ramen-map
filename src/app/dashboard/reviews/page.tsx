@@ -107,7 +107,7 @@ export default function ReviewsPage() {
     setIsLoading(true)
     try {
       // Apply sorting
-      let constraints: any[] = []
+      const constraints: any[] = []
       
       if (sortBy === "created_at_desc") {
         constraints.push(firestoreConstraints.orderBy("created_at", "desc"))
@@ -267,7 +267,7 @@ export default function ReviewsPage() {
                   <SelectItem value="visit_date_asc">造訪日期 (舊到新)</SelectItem>
                   <SelectItem value="overall_score_desc">評分 (高到低)</SelectItem>
                   <SelectItem value="overall_score_asc">評分 (低到高)</SelectItem>
-                </SelectContent>
+                                </SelectContent>
               </Select>
             </div>
           </div>
