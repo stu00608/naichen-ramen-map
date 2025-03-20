@@ -1,64 +1,65 @@
-import { useEffect, useCallback } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
+import { useEffect, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 
-export const useUnsavedChangesWarning = (
-  isDirty: boolean,
-  message: string = '你有未儲存的變更，確定要離開嗎？'
-) => {
+type BlockHandler = (targetPath: string) => Promise<boolean>
+
+export function useUnsavedChangesWarning(isDirty: boolean) {
   const router = useRouter()
-  const pathname = usePathname()
+  const blockHandlerRef = useRef<BlockHandler | null>(null)
+  const pendingNavigationRef = useRef<string | null>(null)
 
-  const shouldBlockNavigation = useCallback(() => {
-    return isDirty && !window.confirm(message)
-  }, [isDirty, message])
+  const registerBlockHandler = useCallback((handler: BlockHandler) => {
+    blockHandlerRef.current = handler
+  }, [])
 
   useEffect(() => {
-    const handleWindowClose = (e: BeforeUnloadEvent) => {
-      if (!isDirty) return
-      e.preventDefault()
-      return (e.returnValue = message)
-    }
-
-    const handleBrowseAway = (e: PopStateEvent) => {
-      if (shouldBlockNavigation()) {
-        // Prevent navigation
-        window.history.pushState(null, '', pathname)
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
         e.preventDefault()
+        e.returnValue = ''
+        return ''
       }
+      return undefined
     }
 
-    // Intercept all click events on links
-    const handleLinkClick = (e: MouseEvent) => {
+    // For browser navigation
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
+    // Intercept navigation attempts
+    const handleClick = async (e: MouseEvent) => {
       const target = e.target as HTMLElement
-      const link = target.closest('a')
+      const anchor = target.closest('a')
       
-      if (!link) return
-      
-      const href = link.getAttribute('href')
-      if (!href || href === pathname) return
-      
-      if (shouldBlockNavigation()) {
-        e.preventDefault()
-        e.stopPropagation()
+      if (anchor && anchor.href && anchor.href.startsWith(window.location.origin)) {
+        const path = anchor.href.slice(window.location.origin.length)
+        
+        if (isDirty && blockHandlerRef.current) {
+          e.preventDefault()
+          pendingNavigationRef.current = path
+          await blockHandlerRef.current(path)
+        }
       }
     }
 
-    window.addEventListener('beforeunload', handleWindowClose)
-    window.addEventListener('popstate', handleBrowseAway)
-    document.addEventListener('click', handleLinkClick, { capture: true })
+    window.addEventListener('click', handleClick, true)
 
-    // Push the current state to enable back button detection
-    window.history.pushState(null, '', pathname)
-
+    // Clean up
     return () => {
-      window.removeEventListener('beforeunload', handleWindowClose)
-      window.removeEventListener('popstate', handleBrowseAway)
-      document.removeEventListener('click', handleLinkClick, { capture: true })
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('click', handleClick, true)
     }
-  }, [pathname, shouldBlockNavigation])
+  }, [isDirty])
 
-  // Return a function to check if navigation should be blocked
-  return {
-    shouldBlock: shouldBlockNavigation
-  }
-} 
+  const shouldBlock = useCallback(() => {
+    return isDirty
+  }, [isDirty])
+
+  const proceedWithNavigation = useCallback((path: string) => {
+    if (path) {
+      router.push(path)
+      pendingNavigationRef.current = null
+    }
+  }, [router])
+
+  return { shouldBlock, registerBlockHandler, proceedWithNavigation }
+}

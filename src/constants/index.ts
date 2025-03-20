@@ -1,6 +1,16 @@
+export const MAX_RAMEN_ITEMS = 5;
+export const MAX_SIDE_MENU_ITEMS = 10;
+
 export const COUNTRIES = {
   JP: '日本',
   TW: '台灣'
+} as const;
+
+export const RESERVATION_TYPES = {
+  no_line: '無需排隊',
+  lined_up: '排隊等候',
+  reserved: '事先預約',
+  registered: '記名制',
 } as const;
 
 export const REGIONS = {

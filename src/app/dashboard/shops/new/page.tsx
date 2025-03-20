@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
+import { toast } from "sonner"
 import {
   Select,
   SelectContent,
@@ -19,6 +20,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription, 
+  DialogFooter 
+} from "@/components/ui/dialog"
+import { useSearchParams as useNextSearchParams } from 'next/navigation'
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning"
 import { useGooglePlaceIdValidation } from "@/hooks/forms/useGooglePlaceIdValidation"
 import { useShopFormUtils, shopSchema, type ShopFormData } from "@/hooks/forms/useShopFormUtils"
@@ -52,6 +62,10 @@ export default function NewShopPage() {
   const googleMapsUriRef = useRef<string | null>(null)
   const [tags, setTags] = useState<Tag[]>([])
   const [activeTagIndex, setActiveTagIndex] = useState<number | null>(null)
+  const [returnToReviews, setReturnToReviews] = useState(false)
+  const searchParams = useNextSearchParams()
+  const returnTo = searchParams.get('returnTo')
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
 
   const { control, register, handleSubmit, setValue, watch, formState: { errors, isDirty } } = useForm<ShopFormData>({
     resolver: zodResolver(shopSchema),
@@ -64,11 +78,88 @@ export default function NewShopPage() {
     }
   })
 
-  const { shouldBlock } = useUnsavedChangesWarning(isDirty)
+  const [confirmationTarget, setConfirmationTarget] = useState<string | null>(null);
+  const { shouldBlock, registerBlockHandler, proceedWithNavigation } = useUnsavedChangesWarning(isDirty);
+  
+  useEffect(() => {
+    registerBlockHandler(async (targetPath: string) => {
+      setConfirmationTarget(targetPath);
+      setCancelDialogOpen(true);
+      return true;
+    });
+  }, [registerBlockHandler]);
 
-  const countryValue = watch("country")
-  const nameValue = watch("name")
-  const businessHours = watch("business_hours")
+  const nameValue = watch('name');
+  const countryValue = watch('country');
+  const businessHours = watch('business_hours');
+
+  // Add this with your other refs
+  const navigationProcessedRef = useRef(false);
+
+  // Update the useEffect for navigation handling
+  useEffect(() => {
+    registerBlockHandler(async (targetPath: string) => {
+      if (isDirty) {
+        setConfirmationTarget(targetPath);
+        setCancelDialogOpen(true);
+        return true; // Block the navigation initially
+      }
+      return false; // Allow navigation if no unsaved changes
+    });
+
+    // Also intercept router.push/replace calls
+    const handleRouteChangeStart = async (url: string) => {
+      if (isDirty) {
+        setConfirmationTarget(url);
+        setCancelDialogOpen(true);
+      }
+    };
+
+    window.addEventListener('popstate', (e) => {
+      if (isDirty) {
+        e.preventDefault();
+        setConfirmationTarget(window.location.pathname);
+        setCancelDialogOpen(true);
+      }
+    });
+
+    return () => {
+      window.removeEventListener('popstate', (e) => {
+        if (isDirty) {
+          e.preventDefault();
+          setConfirmationTarget(window.location.pathname);
+          setCancelDialogOpen(true);
+        }
+      });
+    };
+  }, [isDirty, registerBlockHandler]);
+
+  useEffect(() => {
+    // Only process navigation source once
+    if (navigationProcessedRef.current) return;
+    navigationProcessedRef.current = true;
+  
+    // Check the navigation source from sessionStorage
+    const navigationSource = sessionStorage.getItem('navigation_source');
+    const isFromReviews = navigationSource === 'reviews_new';
+  
+    // Only clear after we've used the value and only if it exists
+    if (navigationSource) {
+      sessionStorage.removeItem('navigation_source');
+    }
+  
+    // Set the returnToReviews state directly based on navigation source
+    if (isFromReviews) {
+      setReturnToReviews(true);
+      localStorage.setItem('return_to_reviews', 'true');
+    } else if (localStorage.getItem('return_to_reviews') === 'true') {
+      // Only clear if it's set to true but not coming directly from reviews
+      localStorage.setItem('return_to_reviews', 'false');
+      setReturnToReviews(false);
+    } else {
+      setReturnToReviews(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (countryValue !== selectedCountry) {
@@ -112,6 +203,11 @@ export default function NewShopPage() {
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [])
+
+  const confirmNavigation = () => {
+    setCancelDialogOpen(false)
+    router.push("/dashboard/shops")
+  }
 
   const searchPlaces = async (query: string, country: string) => {
     try {
@@ -249,7 +345,18 @@ export default function NewShopPage() {
       const result = await addDocument(shopData)
       
       if (result) {
-        router.push("/dashboard/shops")
+        const returnFlag = localStorage.getItem('return_to_reviews');
+        console.log('At submission success, return flag is:', returnFlag);
+  
+        if (returnFlag === 'true') {
+          console.log('Redirecting back to reviews page with shop ID:', result.id);
+          localStorage.removeItem('return_to_reviews');
+          localStorage.setItem('pending_shop_selection', result.id);
+          router.push('/dashboard/reviews/new');
+        } else {
+          console.log('Redirecting to shops list')
+          router.push('/dashboard/shops');
+        }
       }
     } catch (err: any) {
       setGeoError(err.message)
@@ -268,12 +375,23 @@ export default function NewShopPage() {
     setValue("business_hours", newHours)
   }
 
+  // Update the confirmation handler to use proceedWithNavigation
+  const handleConfirmNavigation = () => {
+    setCancelDialogOpen(false);
+    if (confirmationTarget) {
+      proceedWithNavigation(confirmationTarget);
+      setConfirmationTarget(null);
+    }
+  };
+
   const handleCancel = () => {
     if (shouldBlock()) {
-      return
+      setConfirmationTarget("/dashboard/shops");
+      setCancelDialogOpen(true);
+    } else {
+      router.push("/dashboard/shops");
     }
-    router.push("/dashboard/shops")
-  }
+  };
 
   const handleInputFocus = () => {
     setIsInputFocused(true)
@@ -295,6 +413,32 @@ export default function NewShopPage() {
         setShowPlacesResults(false)
       }
     }, 200)
+  }
+
+  const handleClearForm = () => {
+    if (isDirty) {
+      setConfirmationTarget('clear')
+      setCancelDialogOpen(true)
+      return
+    }
+    clearFormData()
+  }
+
+  const clearFormData = () => {
+    const defaultBusinessHours = getDefaultBusinessHours()
+    setValue("name", "")
+    setValue("country", "JP")
+    setValue("region", "")
+    setValue("address", "")
+    setValue("google_place_id", "")
+    setValue("shop_types", [])
+    setValue("tags", [])
+    setValue("business_hours", defaultBusinessHours)
+    setTags([])
+    setExcludeBusinessHours(false)
+    locationRef.current = null
+    googleMapsUriRef.current = null
+    toast.success("已清除所有資料")
   }
 
   return (
@@ -590,7 +734,14 @@ export default function NewShopPage() {
             )}
           </div>
 
-          <div className="col-span-4 flex justify-end space-x-3">
+          <div className="col-span-4 flex justify-start space-x-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleClearForm}
+            >
+              清除
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -607,6 +758,45 @@ export default function NewShopPage() {
           </div>
         </div>
       </form>
+
+      {/* Cancel Confirmation Dialog */}
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {confirmationTarget === 'clear' ? '確認清除' : '確認離開頁面'}
+            </DialogTitle>
+            <DialogDescription>
+              {confirmationTarget === 'clear' 
+                ? '確定要清除所有已填寫的資料嗎？此操作無法復原。'
+                : '您有未儲存的更改，確定要離開嗎？'
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex space-x-2 justify-end">
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={() => setCancelDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button 
+              type="button"
+              onClick={() => {
+                if (confirmationTarget === 'clear') {
+                  clearFormData()
+                  setCancelDialogOpen(false)
+                } else {
+                  handleConfirmNavigation()
+                }
+              }}
+            >
+              {confirmationTarget === 'clear' ? '確認清除' : '確認離開'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
-} 
+}

@@ -43,11 +43,11 @@ const data = {
       items: [
         {
           title: "新增評價",
-          url: "#",
+          url: "/dashboard/reviews/new",
         },
         {
           title: "評價管理",
-          url: "#",
+          url: "/dashboard/reviews",
         },
       ]
     }
