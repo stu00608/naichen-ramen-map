@@ -25,6 +25,9 @@ const pathMap: Record<string, string> = {
   "/dashboard": "主控台",
   "/dashboard/shops": "店家管理",
   "/dashboard/shops/new": "創建店家",
+  // Add review paths
+  "/dashboard/reviews": "評價管理",
+  "/dashboard/reviews/new": "新增評價",
   "/dashboard/docs/how-to-add-record": "如何新增一篇紀錄",
   "/dashboard/settings": "帳號設定",
 }
@@ -38,9 +41,14 @@ function getBreadcrumbItems(pathname: string, shopName?: string) {
     currentPath += `/${path}`
     let label = pathMap[currentPath]
     
-    // If we're on a shop edit page and have the shop name
+    // Handle shop edit page
     if (!label && path !== "shops" && currentPath.includes("/dashboard/shops/") && shopName) {
       label = shopName
+    }
+    
+    // Handle review edit page (when we have the ID parameter)
+    if (!label && path !== "reviews" && currentPath.includes("/dashboard/reviews/") && path !== "new") {
+      label = "評價詳情"
     }
     
     if (label) {
@@ -118,7 +126,9 @@ export default function DashboardLayout({
                       {index === breadcrumbItems.length - 1 ? (
                         <BreadcrumbPage>{item.label}</BreadcrumbPage>
                       ) : (
-                        <Link href={item.path}>{item.label}</Link>
+                        <Link href={item.path} className="hover:text-foreground transition-colors">
+                          {item.label}
+                        </Link>
                       )}
                     </BreadcrumbItem>
                     {index < breadcrumbItems.length - 1 && (
