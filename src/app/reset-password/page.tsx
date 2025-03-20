@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { confirmPasswordReset, verifyPasswordResetCode } from "firebase/auth" 
 import { auth } from "@/lib/firebase"
@@ -19,7 +19,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -32,7 +32,6 @@ export default function ResetPasswordPage() {
   const oobCode = searchParams.get("oobCode")
 
   useEffect(() => {
-    // If no oobCode, immediately show error state
     if (!oobCode) {
       setError("無效的密碼重設連結")
       setIsVerifying(false)
@@ -97,107 +96,92 @@ export default function ResetPasswordPage() {
             <div className="flex justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-            <p className="mt-4 text-center text-sm text-muted-foreground">
-              正在驗證您的請求...
-            </p>
+            <p className="mt-4 text-center">正在驗證密碼重設連結...</p>
           </CardContent>
         </Card>
-      </div>
-    )
-  }
-
-  // Direct access with no oobCode
-  if (!oobCode) {
-    return (
-      <div className="container flex h-screen w-screen flex-col items-center justify-center">
-        <div className={cn("flex w-full max-w-[400px] flex-col gap-6")}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-2xl">重設密碼</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col items-center gap-4">
-                <AlertTriangle className="h-16 w-16 text-amber-500" />
-                <div className="text-center">
-                  <p className="font-semibold">需要有效的重設連結</p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    此頁面只能透過電子郵件中的重設密碼連結訪問
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-            <CardFooter>
-              <Button 
-                onClick={() => router.push("/login")}
-                className="w-full"
-              >
-                回到登入頁面
-              </Button>
-            </CardFooter>
-          </Card>
-        </div>
       </div>
     )
   }
 
   return (
     <div className="container flex h-screen w-screen flex-col items-center justify-center">
-      <div className={cn("flex w-full max-w-[400px] flex-col gap-6")}>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">重設密碼</CardTitle>
+      <Card className="w-full max-w-[400px]">
+        <CardHeader>
+          <CardTitle>重設密碼</CardTitle>
+          {email && (
             <CardDescription>
-              {email && `為 ${email} 設定新密碼`}
+              為 <span className="font-medium">{email}</span> 設定新密碼
             </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {error && (
-              <div className="mb-6 rounded bg-destructive/15 p-3 text-sm text-destructive">
+          )}
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" />
                 {error}
+              </AlertDescription>
+            </Alert>
+          )}
+          {success && (
+            <Alert className="mb-4 bg-green-50 text-green-800">
+              <AlertDescription>{success}</AlertDescription>
+            </Alert>
+          )}
+          <form onSubmit={handleSubmit}>
+            <div className="grid gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="new-password">新密碼</Label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  disabled={!!success}
+                  placeholder="至少 6 個字元"
+                />
               </div>
-            )}
-            {success && (
-              <Alert className="mb-6">
-                <AlertDescription>{success}</AlertDescription>
-              </Alert>
-            )}
-            {!error || (error && !error.includes("連結已失效")) ? (
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="newPassword">新密碼</Label>
-                  <Input
-                    id="newPassword"
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="confirmPassword">確認新密碼</Label>
-                  <Input
-                    id="confirmPassword"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  設定新密碼
-                </Button>
-              </form>
-            ) : (
-              <div className="flex flex-col gap-4">
-                <Button onClick={() => router.push("/login")} className="w-full">
-                  回到登入頁面
-                </Button>
+              <div className="grid gap-2">
+                <Label htmlFor="confirm-password">確認密碼</Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={!!success}
+                />
               </div>
-            )}
+              <Button 
+                type="submit" 
+                disabled={isLoading || !!success}
+                className={cn(isLoading && "opacity-70")}
+              >
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                重設密碼
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={
+      <div className="container flex h-screen w-screen flex-col items-center justify-center">
+        <Card className="w-full max-w-[400px]">
+          <CardContent className="pt-6">
+            <div className="flex justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+            <p className="mt-4 text-center">正在載入...</p>
           </CardContent>
         </Card>
       </div>
-    </div>
+    }>
+      <ResetPasswordContent />
+    </Suspense>
   )
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { applyActionCode } from "firebase/auth"
 import { auth } from "@/lib/firebase"
@@ -16,7 +16,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, CheckCircle2, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-export default function VerifyEmailActionPage() {
+function VerifyEmailContent() {
   const [isVerifying, setIsVerifying] = useState(true)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
@@ -104,5 +104,26 @@ export default function VerifyEmailActionPage() {
         </Card>
       </div>
     </div>
+  )
+}
+
+export default function VerifyEmailActionPage() {
+  return (
+    <Suspense fallback={
+      <div className="container flex h-screen w-screen flex-col items-center justify-center">
+        <Card className="w-full max-w-[400px]">
+          <CardContent className="pt-6">
+            <div className="flex justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+            <p className="mt-4 text-center text-sm text-muted-foreground">
+              正在載入...
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    }>
+      <VerifyEmailContent />
+    </Suspense>
   )
 }
