@@ -467,42 +467,42 @@ export default function ReviewsPage() {
                                   <span>湯頭</span>
                                   <div className="flex items-center">
                                     <StarRating value={review.soup_score} readonly size="sm" />
-                                    <span className="ml-1">{review.soup_score}</span>
+                                    <span className="ml-1 w-6 text-right tabular-nums">{review.soup_score.toFixed(1)}</span>
                                   </div>
                                 </div>
                                 <div className="flex items-center justify-between">
                                   <span>麵條</span>
                                   <div className="flex items-center">
                                     <StarRating value={review.noodle_score} readonly size="sm" />
-                                    <span className="ml-1">{review.noodle_score}</span>
+                                    <span className="ml-1 w-6 text-right tabular-nums">{review.noodle_score.toFixed(1)}</span>
                                   </div>
                                 </div>
                                 <div className="flex items-center justify-between">
                                   <span>配料</span>
                                   <div className="flex items-center">
                                     <StarRating value={review.topping_score} readonly size="sm" />
-                                    <span className="ml-1">{review.topping_score}</span>
+                                    <span className="ml-1 w-6 text-right tabular-nums">{review.topping_score.toFixed(1)}</span>
                                   </div>
                                 </div>
                                 <div className="flex items-center justify-between">
                                   <span>外觀</span>
                                   <div className="flex items-center">
                                     <StarRating value={review.appearance_score} readonly size="sm" />
-                                    <span className="ml-1">{review.appearance_score}</span>
+                                    <span className="ml-1 w-6 text-right tabular-nums">{review.appearance_score.toFixed(1)}</span>
                                   </div>
                                 </div>
                                 <div className="flex items-center justify-between">
                                   <span>體驗</span>
                                   <div className="flex items-center">
                                     <StarRating value={review.experience_score} readonly size="sm" />
-                                    <span className="ml-1">{review.experience_score}</span>
+                                    <span className="ml-1 w-6 text-right tabular-nums">{review.experience_score.toFixed(1)}</span>
                                   </div>
                                 </div>
                                 <div className="flex items-center justify-between">
                                   <span>性價比</span>
                                   <div className="flex items-center">
                                     <StarRating value={review.value_score} readonly size="sm" />
-                                    <span className="ml-1">{review.value_score}</span>
+                                    <span className="ml-1 w-6 text-right tabular-nums">{review.value_score.toFixed(1)}</span>
                                   </div>
                                 </div>
                               </div>
