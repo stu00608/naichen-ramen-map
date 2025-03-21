@@ -73,10 +73,11 @@ interface MultipleSelectorProps {
   /** Props of `Command` */
   commandProps?: React.ComponentPropsWithoutRef<typeof Command>;
   /** Props of `CommandInput` */
+  /** Props of `CommandInput` */
   inputProps?: Omit<
-    React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input>,
+    React.HTMLAttributes<HTMLInputElement>,
     'value' | 'placeholder' | 'disabled'
-  > & {
+    > & {
     onValueChange?: (value: string) => void;
   };
   /** hide the clear all button. */
