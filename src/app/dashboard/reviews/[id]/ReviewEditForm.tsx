@@ -17,6 +17,7 @@ import { StarRating } from "@/components/ui/star-rating"
 import { Calendar } from "@/components/ui/calendar"
 import { ShopPreviewCard } from "@/components/shop-preview-card"
 import { Timestamp } from "firebase/firestore"
+import MultipleSelector, { Option } from "@/components/multi-selector"
 import { collection, query, where, orderBy, limit, getDocs } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import {
@@ -73,6 +74,8 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
     removeRamenItem,
     removeSideMenuItem,
     formatFormDataForSubmission,
+    tagsToOptions,
+    optionsToTags,
     isShopLoading,
     shopError
   } = useReviewFormUtils()
@@ -1080,6 +1083,38 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
               <Plus className="h-4 w-4 mr-2" />
               新增副餐
             </Button>
+          </div>
+          
+          {/* Tags Section */}
+          <div className="space-y-4">
+            <h2 className="text-lg font-medium">標籤</h2>
+            <FormField
+              control={control}
+              name="tags"
+              render={({ field }) => (
+                <FormItem>
+                  <FormControl>
+                    <MultipleSelector
+                      placeholder="輸入標籤..."
+                      value={tagsToOptions(field.value)}
+                      onChange={(selectedOptions) => {
+                        field.onChange(optionsToTags(selectedOptions));
+                      }}
+                      className="w-full"
+                      emptyIndicator={<p className="text-center text-sm">尚未有標籤</p>}
+                      hidePlaceholderWhenSelected
+                      creatable
+                      hideSearch
+                      triggerSearchOnFocus={false}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    可以添加多個標籤來幫助分類和搜尋，例如：特色、風格、服務等特點
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
           
           {/* Your Review Section */}

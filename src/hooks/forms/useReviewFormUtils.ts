@@ -52,6 +52,7 @@ export const reviewSchema = z.object({
       currency: z.string().min(1, { message: "幣別必填" }),
     })
   ).optional(),
+  tags: z.array(z.string()).optional(),
   soup_score: z.number().min(0).max(5),
   noodle_score: z.number().min(0).max(5),
   topping_score: z.number().min(0).max(5),
@@ -159,6 +160,19 @@ export function useReviewFormUtils() {
     return sideMenu.filter((_, i) => i !== index);
   };
 
+  // Convert array of tags to MultipleSelector options format
+  const tagsToOptions = (tags: string[] = []) => {
+    return tags.map(tag => ({
+      value: tag,
+      label: tag
+    }));
+  };
+
+  // Extract tag values from options
+  const optionsToTags = (options: any[]): string[] => {
+    return options.map(option => option.value);
+  };
+
   // Function to prepare the form data for submission
   const formatFormDataForSubmission = (data: ReviewFormData) => {
     // Filter out empty items before submission
@@ -189,6 +203,7 @@ export function useReviewFormUtils() {
       ...(data.shop_name?.toLowerCase().split(/\s+/) || []),
       ...validRamenItems.map(item => item.name.toLowerCase()),
       ...validSideMenuItems.map(item => item.name.toLowerCase()),
+      ...(data.tags || []).map(tag => tag.toLowerCase()),
       ...(data.notes ? data.notes.toLowerCase().split(/\s+/) : [])
     ].filter(Boolean);
 
@@ -201,6 +216,7 @@ export function useReviewFormUtils() {
       wait_time: data.wait_time || "",
       ramen_items: validRamenItems,
       side_menu: validSideMenuItems,
+      tags: data.tags || [],
       soup_score: data.soup_score,
       noodle_score: data.noodle_score,
       topping_score: data.topping_score,
@@ -225,6 +241,8 @@ export function useReviewFormUtils() {
     removeRamenItem,
     removeSideMenuItem,
     formatFormDataForSubmission,
+    tagsToOptions,
+    optionsToTags,
     isShopLoading,
     shopError
   };

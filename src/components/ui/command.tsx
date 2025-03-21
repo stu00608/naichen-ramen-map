@@ -15,12 +15,8 @@ import {
 
 function Command({
   className,
-  children,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive>) {
-  // Make sure children exists and is iterable
-  const safeChildren = React.Children.toArray(children);
-
   return (
     <CommandPrimitive
       data-slot="command"
@@ -29,9 +25,7 @@ function Command({
         className
       )}
       {...props}
-    >
-      {safeChildren}
-    </CommandPrimitive>
+    />
   )
 }
 
