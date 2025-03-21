@@ -32,9 +32,11 @@ import { useSearchParams as useNextSearchParams } from 'next/navigation'
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning"
 import { useGooglePlaceIdValidation } from "@/hooks/forms/useGooglePlaceIdValidation"
 import { useShopFormUtils, shopSchema, type ShopFormData } from "@/hooks/forms/useShopFormUtils"
-import { Search } from "lucide-react"
+import { Search, Clock3 } from "lucide-react"
 import { ShopPreviewCard } from "@/components/shop-preview-card"
 import MultipleSelector, { Option } from "@/components/multi-selector"
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 
 interface BusinessHourPeriod {
   open: string
@@ -473,6 +475,23 @@ export default function NewShopPage() {
     return options.map(option => option.value);
   };
 
+  // Update the handleTimeChange function to match the review form's logic
+  const handleTimeChange = (day: string, index: number, type: 'open' | 'close', field: 'hour' | 'minute', value: string) => {
+    const currentPeriod = watch(`business_hours.${day}.periods.${index}.${type}`) || "00:00";
+    const [currentHour, currentMinute] = currentPeriod.split(':');
+    
+    let newHour = currentHour;
+    let newMinute = currentMinute;
+    
+    if (field === 'hour') {
+      newHour = value.padStart(2, '0');
+    } else { // minute
+      newMinute = value.padStart(2, '0');
+    }
+    
+    setValue(`business_hours.${day}.periods.${index}.${type}`, `${newHour}:${newMinute}`);
+  };
+
   return (
     <div className="space-y-8">
       <h1 className="text-2xl font-bold mt-4 max-h-[30px]">新增店家</h1>
@@ -729,35 +748,165 @@ export default function NewShopPage() {
 
                     {!watch(`business_hours.${day}.isClosed`) && (
                       <div className="space-y-3">
-                        {watch(`business_hours.${day}.periods`)?.map((_, index) => (
+                        {watch(`business_hours.${day}.periods`)?.map((period, index) => (
                           <div key={index} className="flex items-center gap-2">
-                            <Controller
-                              name={`business_hours.${day}.periods.${index}.open` as any}
-                              control={control}
-                              render={({ field }) => (
-                                <Input 
-                                  type="time" 
-                                  value={field.value} 
-                                  onChange={field.onChange}
-                                  className="w-32"
-                                />
-                              )}
-                            />
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant={"outline"}
+                                  className="w-32 justify-center gap-4"
+                                >
+                                  {period.open || "00:00"}
+                                  <Clock3 className="h-4 w-4" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0">
+                                <div className="flex flex-col sm:flex-row sm:h-[300px] divide-y sm:divide-y-0 sm:divide-x">
+                                  <ScrollArea className="w-64 sm:w-auto">
+                                    <div className="flex sm:flex-col p-2">
+                                      {Array.from({ length: 24 }, (_, i) => i)
+                                        .reverse()
+                                        .map((hour) => {
+                                          const hourString = hour.toString();
+                                          const [currentHour] = (period.open || "00:00").split(':');
+                                          return (
+                                            <Button
+                                              key={hour}
+                                              size="icon"
+                                              variant={
+                                                currentHour === hourString.padStart(2, '0')
+                                                  ? "default"
+                                                  : "ghost"
+                                              }
+                                              className="sm:w-full shrink-0 aspect-square"
+                                              onClick={() =>
+                                                handleTimeChange(day, index, 'open', 'hour', hourString)
+                                              }
+                                            >
+                                              {hour}
+                                            </Button>
+                                          );
+                                        })}
+                                    </div>
+                                    <ScrollBar
+                                      orientation="horizontal"
+                                      className="sm:hidden"
+                                    />
+                                  </ScrollArea>
+                                  <ScrollArea className="w-64 sm:w-auto">
+                                    <div className="flex sm:flex-col p-2">
+                                      {Array.from({ length: 12 }, (_, i) => i * 5).map(
+                                        (minute) => {
+                                          const minuteString = minute.toString();
+                                          const [_, currentMinute] = (period.open || "00:00").split(':');
+                                          return (
+                                            <Button
+                                              key={minute}
+                                              size="icon"
+                                              variant={
+                                                currentMinute === minuteString.padStart(2, '0')
+                                                  ? "default"
+                                                  : "ghost"
+                                              }
+                                              className="sm:w-full shrink-0 aspect-square"
+                                              onClick={() =>
+                                                handleTimeChange(day, index, 'open', 'minute', minuteString)
+                                              }
+                                            >
+                                              {minuteString.padStart(2, "0")}
+                                            </Button>
+                                          );
+                                        }
+                                      )}
+                                    </div>
+                                    <ScrollBar
+                                      orientation="horizontal"
+                                      className="sm:hidden"
+                                    />
+                                  </ScrollArea>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
                             
                             <span className="mx-1">〜</span>
                             
-                            <Controller
-                              name={`business_hours.${day}.periods.${index}.close` as any}
-                              control={control}
-                              render={({ field }) => (
-                                <Input 
-                                  type="time" 
-                                  value={field.value} 
-                                  onChange={field.onChange}
-                                  className="w-32"
-                                />
-                              )}
-                            />
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant={"outline"}
+                                  className="w-32 justify-center gap-4"
+                                >
+                                  {period.close || "00:00"}
+                                  <Clock3 className="h-4 w-4" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0">
+                                <div className="flex flex-col sm:flex-row sm:h-[300px] divide-y sm:divide-y-0 sm:divide-x">
+                                  <ScrollArea className="w-64 sm:w-auto">
+                                    <div className="flex sm:flex-col p-2">
+                                      {Array.from({ length: 24 }, (_, i) => i)
+                                        .reverse()
+                                        .map((hour) => {
+                                          const hourString = hour.toString();
+                                          const [currentHour] = (period.close || "00:00").split(':');
+                                          return (
+                                            <Button
+                                              key={hour}
+                                              size="icon"
+                                              variant={
+                                                currentHour === hourString.padStart(2, '0')
+                                                  ? "default"
+                                                  : "ghost"
+                                              }
+                                              className="sm:w-full shrink-0 aspect-square"
+                                              onClick={() =>
+                                                handleTimeChange(day, index, 'close', 'hour', hourString)
+                                              }
+                                            >
+                                              {hour}
+                                            </Button>
+                                          );
+                                        })}
+                                    </div>
+                                    <ScrollBar
+                                      orientation="horizontal"
+                                      className="sm:hidden"
+                                    />
+                                  </ScrollArea>
+                                  <ScrollArea className="w-64 sm:w-auto">
+                                    <div className="flex sm:flex-col p-2">
+                                      {Array.from({ length: 12 }, (_, i) => i * 5).map(
+                                        (minute) => {
+                                          const minuteString = minute.toString();
+                                          const [_, currentMinute] = (period.close || "00:00").split(':');
+                                          return (
+                                            <Button
+                                              key={minute}
+                                              size="icon"
+                                              variant={
+                                                currentMinute === minuteString.padStart(2, '0')
+                                                  ? "default"
+                                                  : "ghost"
+                                              }
+                                              className="sm:w-full shrink-0 aspect-square"
+                                              onClick={() =>
+                                                handleTimeChange(day, index, 'close', 'minute', minuteString)
+                                              }
+                                            >
+                                              {minuteString.padStart(2, "0")}
+                                            </Button>
+                                          );
+                                        }
+                                      )}
+                                    </div>
+                                    <ScrollBar
+                                      orientation="horizontal"
+                                      className="sm:hidden"
+                                    />
+                                  </ScrollArea>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
 
                             {watch(`business_hours.${day}.periods`)?.length > 1 && (
                               <Button
@@ -772,7 +921,6 @@ export default function NewShopPage() {
                             )}
                           </div>
                         ))}
-                        
                       </div>
                     )}
                   </div>
