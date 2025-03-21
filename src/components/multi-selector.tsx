@@ -459,7 +459,7 @@ const MultipleSelector = React.forwardRef<MultipleSelectorRef, MultipleSelectorP
 
     const CreatableItem = () => {
       if (!creatable || !inputValue.trim()) return undefined;
-      
+  
       if (
         isOptionsExist(options, [{ value: inputValue, label: inputValue }]) ||
         selected.find((s) => s.value === inputValue)
@@ -467,15 +467,17 @@ const MultipleSelector = React.forwardRef<MultipleSelectorRef, MultipleSelectorP
         return undefined;
       }
 
-      const Item = (
-        <CommandItem
-          value={inputValue}
-          className="cursor-pointer"
-          onMouseDown={(e) => {
+      // Use a type assertion to tell TypeScript this is valid
+      const Item = React.createElement(
+        CommandItem,
+        {
+          value: inputValue,
+          className: "cursor-pointer",
+          onMouseDown: (e: React.MouseEvent) => {
             e.preventDefault();
             e.stopPropagation();
-          }}
-          onSelect={(value: string) => {
+          },
+          onSelect: (value: string) => {
             if (selected.length >= maxSelected) {
               onMaxSelected?.(selected.length);
               return;
@@ -484,10 +486,9 @@ const MultipleSelector = React.forwardRef<MultipleSelectorRef, MultipleSelectorP
             const newOptions = [...selected, { value, label: value }];
             setSelected(newOptions);
             onChange?.(newOptions);
-          }}
-        >
-          {`Create "${inputValue}"`}
-        </CommandItem>
+          }
+        },
+          `Create "${inputValue}"`
       );
 
       // For normal creatable
