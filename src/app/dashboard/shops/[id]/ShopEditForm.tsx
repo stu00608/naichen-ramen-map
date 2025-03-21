@@ -35,7 +35,7 @@ import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning"
 import { useGooglePlaceIdValidation } from "@/hooks/forms/useGooglePlaceIdValidation"
 import { useShopFormUtils, shopSchema, type ShopFormData } from "@/hooks/forms/useShopFormUtils"
 import { Tag, TagInput } from "@/components/ui/tag-input-wrapper"
-import { Search } from "lucide-react"
+import { Search, Trash2 } from "lucide-react"
 import { ShopPreviewCard } from "@/components/shop-preview-card"
 import { toast } from "sonner"
 import {
@@ -67,6 +67,8 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
   const { getDefaultBusinessHours, formatFormDataForSubmission, addPeriod, removePeriod, geocodeAddress, prepareShopSearchFields } = useShopFormUtils()
   const [geoError, setGeoError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const [selectedCountry, setSelectedCountry] = useState<keyof typeof REGIONS>("JP")
   const locationRef = useRef<GeoPoint | null>(null)
@@ -86,7 +88,7 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [confirmationTarget, setConfirmationTarget] = useState<string | null>(null)
 
-  const { control, register, handleSubmit, setValue, watch, formState: { errors, isDirty }, reset } = useForm<ShopFormData>({
+  const { control, register, handleSubmit, setValue, watch, formState: { errors, isDirty }, reset, getValues } = useForm<ShopFormData>({
     resolver: zodResolver(shopSchema),
     defaultValues: {
       shop_types: [],
@@ -103,34 +105,42 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 
   useEffect(() => {
     const fetchShop = async () => {
-      const shop = await getDocument(shopId) as Shop | null
-      if (shop) {
-        reset({
-          name: shop.name,
-          address: shop.address,
-          country: shop.country,
-          region: shop.region,
-          shop_types: shop.shop_types,
-          tags: shop.tags?.map((tag, index) => ({ id: index.toString(), text: tag })) || [],
-          business_hours: shop.business_hours || getDefaultBusinessHours(),
-          closed_days: [],
-          google_place_id: shop.google_place_id
-        })
-        setSelectedCountry(shop.country as keyof typeof REGIONS)
-        locationRef.current = shop.location
-        googleMapsUriRef.current = shop.googleMapsUri || null
-        setExcludeBusinessHours(!shop.isBusinessHoursAvailable)
-        setLastSearchedValue(shop.name)
-        
-        // Set the selected place to show in the preview card
-        const transformedPlace = {
-          id: shop.google_place_id || "",
-          name: shop.name,
-          address: shop.address,
-          country: shop.country,
-          googleMapsUri: shop.googleMapsUri || "",
+      setIsLoading(true)
+      try {
+        const shop = await getDocument(shopId) as Shop | null
+        if (shop) {
+          reset({
+            name: shop.name,
+            address: shop.address,
+            country: shop.country,
+            region: shop.region,
+            shop_types: shop.shop_types,
+            tags: shop.tags?.map((tag, index) => ({ id: index.toString(), text: tag })) || [],
+            business_hours: shop.business_hours || getDefaultBusinessHours(),
+            closed_days: [],
+            google_place_id: shop.google_place_id
+          })
+          setSelectedCountry(shop.country as keyof typeof REGIONS)
+          locationRef.current = shop.location
+          googleMapsUriRef.current = shop.googleMapsUri || null
+          setExcludeBusinessHours(!shop.isBusinessHoursAvailable)
+          setLastSearchedValue(shop.name)
+          
+          // Set the selected place to show in the preview card
+          const transformedPlace = {
+            id: shop.google_place_id || "",
+            name: shop.name,
+            address: shop.address,
+            country: shop.country,
+            googleMapsUri: shop.googleMapsUri || "",
+          }
+          setSelectedPlace(transformedPlace)
         }
-        setSelectedPlace(transformedPlace)
+      } catch (error) {
+        console.error("Error fetching shop:", error)
+        toast.error("載入店家資料時發生錯誤")
+      } finally {
+        setIsLoading(false)
       }
     }
     fetchShop()
@@ -375,20 +385,88 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 
   const handleDelete = async () => {
     try {
-      setIsSubmitting(true)
+      setIsDeleting(true)
       const success = await deleteDocument(shopId)
       if (success) {
+        toast.success("店家已成功刪除")
         router.push("/dashboard/shops")
+      } else {
+        toast.error("刪除店家失敗")
+        setIsDeleteDialogOpen(false)
       }
+    } catch (error) {
+      console.error("Error deleting shop:", error)
+      toast.error("刪除店家時發生錯誤")
+      setIsDeleteDialogOpen(false)
     } finally {
-      setIsSubmitting(false)
+      setIsDeleting(false)
     }
+  }
+
+  // Add helper function to check if form contains meaningful data
+  const isFormNotEmpty = () => {
+    const formValues = getValues();
+    
+    // Check if shop has a name
+    if (formValues.name.trim()) return true;
+    
+    // Check if shop has an address
+    if (formValues.address.trim()) return true;
+    
+    // Check if shop has region or country set
+    if (formValues.region || formValues.country !== "JP") return true;
+    
+    // Check if shop has types selected
+    if (formValues.shop_types.length > 0) return true;
+    
+    // Check if shop has tags
+    if (formValues.tags?.length > 0) return true;
+    
+    return false;
+  };
+
+  // Add clear form handler
+  const handleClearForm = () => {
+    if (isDirty || isFormNotEmpty()) {
+      setConfirmationTarget('clear')
+      setCancelDialogOpen(true)
+      return
+    }
+    clearFormData()
+  }
+
+  // Add helper function to clear form data
+  const clearFormData = () => {
+    reset({
+      name: "",
+      address: "",
+      country: "JP",
+      region: "",
+      shop_types: [],
+      tags: [],
+      business_hours: getDefaultBusinessHours(),
+      closed_days: [],
+      google_place_id: ""
+    })
+    
+    setSelectedCountry("JP")
+    locationRef.current = null
+    googleMapsUriRef.current = null
+    setExcludeBusinessHours(false)
+    setLastSearchedValue("")
+    setSelectedPlace(null)
+    
+    toast.success("已清除所有資料")
   }
 
   const handleConfirmNavigation = () => {
     setCancelDialogOpen(false)
     if (confirmationTarget) {
-      router.push(confirmationTarget)
+      if (confirmationTarget === 'clear') {
+        clearFormData()
+      } else {
+        router.push(confirmationTarget)
+      }
       setConfirmationTarget(null)
     }
   }
@@ -425,30 +503,17 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
     }, 200)
   }
 
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center py-10">
+        <p>載入店家資料中...</p>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-center mt-4 max-h-[30px]">
-        <h1 className="text-2xl font-bold">編輯店家</h1>
-        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-          <AlertDialogTrigger asChild>
-            <Button variant="destructive">刪除店家</Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>確定要刪除此店家嗎？</AlertDialogTitle>
-              <AlertDialogDescription>
-                此操作無法復原。所有與此店家相關的資料都將被永久刪除。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
-              <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                確定刪除
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+      <h1 className="text-2xl font-bold mt-4">編輯店家</h1>
       
       {(error || geoError) && (
         <div className="bg-destructive/10 text-destructive p-4 rounded">
@@ -765,20 +830,57 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
             )}
           </div>
 
-          <div className="col-span-4 flex justify-end space-x-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleCancel}
-            >
-              取消
-            </Button>
-            <Button 
-              type="submit" 
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? '儲存中...' : '儲存'}
-            </Button>
+          <div className="col-span-4 flex justify-start">
+            <div className="flex justify-end space-x-3">
+              <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={isDeleting}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>確定要刪除此店家嗎？</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      此操作無法復原。所有與此店家相關的資料都將被永久刪除。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setIsDeleteDialogOpen(false)}>取消</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      確定刪除
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleClearForm}
+              >
+                清除
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancel}
+              >
+                取消
+              </Button>
+              <Button 
+                type="submit" 
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? '儲存中...' : '儲存'}
+              </Button>
+            </div>
           </div>
         </div>
       </form>
@@ -787,9 +889,14 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
       <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>確認離開頁面</DialogTitle>
+            <DialogTitle>
+              {confirmationTarget === 'clear' ? '確認清除' : '確認離開頁面'}
+            </DialogTitle>
             <DialogDescription>
-              您有未儲存的更改，確定要離開嗎？
+              {confirmationTarget === 'clear' 
+                ? '確定要清除所有已填寫的資料嗎？此操作無法復原。'
+                : '您有未儲存的更改，確定要離開嗎？'
+              }
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex space-x-2 justify-end">
@@ -804,7 +911,7 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
               type="button"
               onClick={handleConfirmNavigation}
             >
-              確認離開
+              {confirmationTarget === 'clear' ? '確認清除' : '確認離開'}
             </Button>
           </DialogFooter>
         </DialogContent>
