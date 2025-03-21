@@ -150,9 +150,10 @@ function isOptionsExist(groupOption: GroupOption, targetOption: Option[]) {
  *
  * @reference: https://github.com/hsuanyi-chou/shadcn-ui-expansions/issues/34#issuecomment-1949561607
  **/
+// For the CommandEmpty component:
 const CommandEmpty = forwardRef<
   HTMLDivElement,
-  React.ComponentProps<typeof CommandPrimitive.Empty>
+  React.HTMLAttributes<HTMLDivElement> & { 'cmdk-empty'?: string; role?: string }
 >(({ className, ...props }, forwardedRef) => {
   const render = useCommandState((state) => state.filtered.count === 0);
 
