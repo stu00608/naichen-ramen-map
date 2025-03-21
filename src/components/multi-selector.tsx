@@ -459,48 +459,43 @@ const MultipleSelector = React.forwardRef<MultipleSelectorRef, MultipleSelectorP
 
     const CreatableItem = () => {
       if (!creatable || !inputValue.trim()) return undefined;
-  
+      
       if (
         isOptionsExist(options, [{ value: inputValue, label: inputValue }]) ||
         selected.find((s) => s.value === inputValue)
       ) {
         return undefined;
       }
-
-      // Use a type assertion to tell TypeScript this is valid
-      const Item = React.createElement(
-        CommandItem,
-        {
-          value: inputValue,
-          className: "cursor-pointer",
-          onMouseDown: (e: React.MouseEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-          },
-          onSelect: (value: string) => {
-            if (selected.length >= maxSelected) {
-              onMaxSelected?.(selected.length);
-              return;
-            }
-            setInputValue('');
-            const newOptions = [...selected, { value, label: value }];
-            setSelected(newOptions);
-            onChange?.(newOptions);
-          }
-        },
-          `Create "${inputValue}"`
-      );
-
-      // For normal creatable
-      if (!onSearch && inputValue.length > 0) {
-        return Item;
+    
+      // Switch to JSX syntax which has better type inference
+      if (
+        (!onSearch && inputValue.length > 0) || 
+        (onSearch && debouncedSearchTerm.length > 0 && !isLoading)
+      ) {
+        return (
+          <CommandItem
+            value={inputValue}
+            className="cursor-pointer"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onSelect={(value: string) => {
+              if (selected.length >= maxSelected) {
+                onMaxSelected?.(selected.length);
+                return;
+              }
+              setInputValue('');
+              const newOptions = [...selected, { value, label: value }];
+              setSelected(newOptions);
+              onChange?.(newOptions);
+            }}
+          >
+            {`Create "${inputValue}"`}
+          </CommandItem>
+        );
       }
-
-      // For async search creatable. avoid showing creatable item before loading at first.
-      if (onSearch && debouncedSearchTerm.length > 0 && !isLoading) {
-        return Item;
-      }
-
+    
       return undefined;
     };
 
