@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Edit, Plus, Search, Star, Trash2, X } from "lucide-react"
+import { Edit, Plus, Search, Star, Trash2, X, Settings2 } from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import { useFirestore, firestoreConstraints } from "@/hooks/useFirestore"
@@ -520,8 +520,10 @@ export default function ReviewsPage() {
                       {review.visit_date ? formatDate(review.visit_date.toDate()) : "未知日期"}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" asChild className="mr-2">
-                        <Link href={`/dashboard/reviews/${review.id}`}>編輯</Link>
+                      <Button variant="ghost" asChild>
+                        <Link href={`/dashboard/reviews/${review.id}`}>
+                          <Settings2 className="h-4 w-4" />
+                        </Link>
                       </Button>
                       <AlertDialog open={reviewToDelete === review.id} onOpenChange={(open) => !open && setReviewToDelete(null)}>
                         <AlertDialogTrigger asChild>
@@ -530,7 +532,7 @@ export default function ReviewsPage() {
                             className="text-destructive hover:text-destructive/90"
                             onClick={() => setReviewToDelete(review.id)}
                           >
-                            刪除
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>

@@ -3,7 +3,7 @@
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
 import { useState, useEffect, useRef } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useForm, useFieldArray } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Search, Plus, X, Save, CalendarDays } from "lucide-react"
@@ -48,6 +48,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 
 export default function NewReviewPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { addDocument, loading, error } = useFirestore("reviews")
   const {
     fetchShopData,
@@ -70,6 +71,8 @@ export default function NewReviewPage() {
   const searchContainerRef = useRef<HTMLDivElement>(null)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [confirmationTarget, setConfirmationTarget] = useState<string | null>(null)
+
+  const prevShopIdRef = useRef<string | null>(null);
   
   // Form initialization with react-hook-form and zod validation
   const form = useForm<ReviewFormData>({
@@ -143,11 +146,21 @@ export default function NewReviewPage() {
     router.push("/dashboard/shops/new")
   }
 
+  // Check for shop ID in URL parameters
+  useEffect(() => {
+    const urlShopId = searchParams.get('shopId')
+    if (urlShopId && urlShopId !== prevShopIdRef.current) {
+      prevShopIdRef.current = urlShopId;
+      handleShopSelect(urlShopId)
+    }
+  }, [searchParams])
+
   // Check for pending shop selection from shop creation
   useEffect(() => {
     const pendingShopId = localStorage.getItem('pending_shop_selection')
     if (pendingShopId) {
       handleShopSelect(pendingShopId)
+      console.log("Pending shop ID from localStorage:", pendingShopId)
       localStorage.removeItem('pending_shop_selection')
     }
   }, [])

@@ -22,10 +22,8 @@ export const shopSchema = z.object({
   country: z.string().min(1, "請選擇國家"),
   region: z.string().min(1, "請選擇區域"),
   shop_types: z.array(z.string()).min(1, "請選擇至少一種拉麵類型"),
-  tags: z.array(z.object({
-    id: z.string(),
-    text: z.string()
-  })).default([]),
+  tags: z.array(z.string()).default([]),
+  google_place_id: z.string().optional(),
   business_hours: z.record(z.object({
     periods: z.array(z.object({
       open: z.string(),
@@ -33,11 +31,21 @@ export const shopSchema = z.object({
     })),
     isClosed: z.boolean()
   })),
-  closed_days: z.array(z.string()).optional(),
-  google_place_id: z.string().optional()
+  closed_days: z.array(z.string()).default([])
 })
 
-export type ShopFormData = z.infer<typeof shopSchema>
+// Update the ShopFormData interface to use string[] for tags instead of Tag[]
+export interface ShopFormData {
+  name: string;
+  country: string;
+  region: string;
+  address: string;
+  google_place_id?: string;
+  shop_types: string[];
+  tags: string[];
+  business_hours: Record<string, DaySchedule>;
+  closed_days: string[];
+}
 
 // Add this interface at the top with other interfaces
 export interface GeocodingResult {
@@ -61,31 +69,20 @@ export const useShopFormUtils = () => {
     }), {})
   }
 
-  // Format form data for submission
+  // Update the formatFormDataForSubmission function to handle string[] tags
   const formatFormDataForSubmission = (data: ShopFormData, excludeBusinessHours: boolean) => {
-    const tags = data.tags.map(tag => tag.text)
-    
-    const google_place_id = data.google_place_id
-      ? data.google_place_id : ""
-    
-    const business_hours = { ...data.business_hours }
-    const closed_days = DAYS_OF_WEEK.filter(day => 
-      business_hours?.[day]?.isClosed
-    )
-
     return {
       name: data.name,
-      address: data.address,
       country: data.country,
       region: data.region,
-      shop_types: data.shop_types,
-      business_hours,
-      closed_days,
-      tags,
-      google_place_id,
-      isBusinessHoursAvailable: !excludeBusinessHours
-    }
-  }
+      address: data.address,
+      google_place_id: data.google_place_id || null,
+      shop_types: data.shop_types || [],
+      tags: data.tags || [], // Update to use the string array directly
+      business_hours: excludeBusinessHours ? null : data.business_hours,
+      isBusinessHoursAvailable: !excludeBusinessHours,
+    };
+  };
 
   // Business hours period management
   const addPeriod = (currentHours: Record<string, DaySchedule>, day: string) => {
@@ -164,4 +161,4 @@ export const useShopFormUtils = () => {
     geocodeAddress,
     prepareShopSearchFields
   }
-} 
+}

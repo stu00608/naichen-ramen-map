@@ -56,7 +56,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination"
 import { Input } from "@/components/ui/input"
-import { Search, X } from "lucide-react"
+import { Search, Trash2, MessageSquareDiff, Settings2, X } from "lucide-react"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 
 export default function ShopsPage() {
@@ -477,11 +477,15 @@ export default function ShopsPage() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button variant="ghost" asChild className="mr-2">
-                        <Link href={`/dashboard/shops/${shop.id}`}>編輯</Link>
+                      <Button variant="ghost" asChild className="">
+                        <Link href={`/dashboard/reviews/new?shopId=${shop.id}`}>
+                          <MessageSquareDiff className="h-4 w-4" />
+                        </Link>
                       </Button>
-                      <Button variant="ghost" asChild className="mr-2">
-                        <Link href={`/dashboard/reviews/new?shopId=${shop.id}`}>新增評價</Link>
+                      <Button variant="ghost" asChild className="">
+                        <Link href={`/dashboard/shops/${shop.id}`}>
+                          <Settings2 className="h-4 w-4" />
+                        </Link>
                       </Button>
                       <AlertDialog open={shopToDelete === shop.id} onOpenChange={(open) => !open && setShopToDelete(null)}>
                         <AlertDialogTrigger asChild>
@@ -490,7 +494,7 @@ export default function ShopsPage() {
                             className="text-destructive hover:text-destructive/90"
                             onClick={() => setShopToDelete(shop.id || null)}
                           >
-                            刪除
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>

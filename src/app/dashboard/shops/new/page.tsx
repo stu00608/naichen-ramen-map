@@ -32,10 +32,9 @@ import { useSearchParams as useNextSearchParams } from 'next/navigation'
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning"
 import { useGooglePlaceIdValidation } from "@/hooks/forms/useGooglePlaceIdValidation"
 import { useShopFormUtils, shopSchema, type ShopFormData } from "@/hooks/forms/useShopFormUtils"
-import { Tag, TagInput } from "@/components/ui/tag-input-wrapper"
 import { Search } from "lucide-react"
 import { ShopPreviewCard } from "@/components/shop-preview-card"
-import { url } from "inspector"
+import MultipleSelector, { Option } from "@/components/multi-selector"
 
 interface BusinessHourPeriod {
   open: string
@@ -64,8 +63,6 @@ export default function NewShopPage() {
   const searchContainerRef = useRef<HTMLDivElement>(null)
   const [excludeBusinessHours, setExcludeBusinessHours] = useState(false)
   const googleMapsUriRef = useRef<string | null>(null)
-  const [tags, setTags] = useState<Tag[]>([])
-  const [activeTagIndex, setActiveTagIndex] = useState<number | null>(null)
   const [returnToReviews, setReturnToReviews] = useState(false)
   const searchParams = useNextSearchParams()
   const returnTo = searchParams.get('returnTo')
@@ -74,11 +71,15 @@ export default function NewShopPage() {
   const { control, register, handleSubmit, setValue, watch, formState: { errors, isDirty } } = useForm<ShopFormData>({
     resolver: zodResolver(shopSchema),
     defaultValues: {
+      name: "",
+      address: "",
       country: "JP",
+      region: "",
+      shop_types: [],
+      tags: [],
       business_hours: getDefaultBusinessHours(),
       closed_days: [],
-      shop_types: [],
-      tags: []
+      google_place_id: ""
     }
   })
 
@@ -446,13 +447,31 @@ export default function NewShopPage() {
     setValue("shop_types", [])
     setValue("tags", [])
     setValue("business_hours", defaultBusinessHours)
-    setTags([])
     setExcludeBusinessHours(false)
     locationRef.current = null
     googleMapsUriRef.current = null
     setSelectedPlace(null)
     toast.success("已清除所有資料")
   }
+
+  // Convert RAMEN_TYPES to options format for the MultipleSelector
+  const ramenTypeOptions = RAMEN_TYPES.map(type => ({
+    value: type,
+    label: type
+  }));
+
+  // Convert array of tags to MultipleSelector options format
+  const tagsToOptions = (tags: string[] = []): Option[] => {
+    return tags.map(tag => ({
+      value: tag,
+      label: tag
+    }));
+  };
+
+  // Extract tag values from options
+  const optionsToTags = (options: Option[]): string[] => {
+    return options.map(option => option.value);
+  };
 
   return (
     <div className="space-y-8">
@@ -611,38 +630,18 @@ export default function NewShopPage() {
               name="shop_types"
               control={control}
               render={({ field }) => (
-                <Select
-                  value={field.value[0] || ""}
-                  onValueChange={(value: string) => {
-                    const currentValues = new Set(field.value);
-                    if (currentValues.has(value)) {
-                      currentValues.delete(value);
-                    } else {
-                      currentValues.add(value);
-                    }
-                    field.onChange(Array.from(currentValues));
+                <MultipleSelector
+                  placeholder="選擇拉麵類型"
+                  defaultOptions={ramenTypeOptions}
+                  value={field.value.map(type => ({ value: type, label: type }))}
+                  onChange={(selectedOptions) => {
+                    field.onChange(selectedOptions.map(option => option.value));
                   }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="選擇拉麵類型">
-                      {field.value.length > 0 
-                        ? field.value.join(", ")
-                        : "選擇拉麵類型"
-                      }
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {RAMEN_TYPES.map((type) => (
-                      <SelectItem 
-                        key={type} 
-                        value={type}
-                        className={field.value.includes(type) ? "bg-accent" : ""}
-                      >
-                        {type}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  className="w-full"
+                  emptyIndicator={<p className="text-center text-sm">找不到拉麵類型</p>}
+                  hidePlaceholderWhenSelected
+                  hideClearAllButton={field.value.length === 0}
+                />
               )}
             />
             {errors.shop_types && (
@@ -657,13 +656,18 @@ export default function NewShopPage() {
               name="tags"
               control={control}
               render={({ field }) => (
-                <TagInput
-                  {...field}
+                <MultipleSelector
                   placeholder="輸入標籤..."
-                  tags={field.value}
-                  setTags={field.onChange}
-                  activeTagIndex={activeTagIndex}
-                  setActiveTagIndex={setActiveTagIndex}
+                  value={tagsToOptions(field.value)}
+                  onChange={(selectedOptions) => {
+                    field.onChange(optionsToTags(selectedOptions));
+                  }}
+                  className="w-full"
+                  emptyIndicator={<p className="text-center text-sm">尚未有標籤</p>}
+                  hidePlaceholderWhenSelected
+                  creatable
+                  hideSearch
+                  triggerSearchOnFocus={false}
                 />
               )}
             />

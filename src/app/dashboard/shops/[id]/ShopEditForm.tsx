@@ -34,7 +34,6 @@ import {
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning"
 import { useGooglePlaceIdValidation } from "@/hooks/forms/useGooglePlaceIdValidation"
 import { useShopFormUtils, shopSchema, type ShopFormData } from "@/hooks/forms/useShopFormUtils"
-import { Tag, TagInput } from "@/components/ui/tag-input-wrapper"
 import { Search, Trash2 } from "lucide-react"
 import { ShopPreviewCard } from "@/components/shop-preview-card"
 import { toast } from "sonner"
@@ -46,6 +45,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
+import MultipleSelector, { Option } from "@/components/multi-selector"
 
 interface BusinessHourPeriod {
   open: string
@@ -81,7 +81,6 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
   const [isInputFocused, setIsInputFocused] = useState(false)
   const [excludeBusinessHours, setExcludeBusinessHours] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
-  const [activeTagIndex, setActiveTagIndex] = useState<number | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [isSearching, setIsSearching] = useState(false)
   const [selectedPlace, setSelectedPlace] = useState<any | null>(null)
@@ -91,9 +90,15 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
   const { control, register, handleSubmit, setValue, watch, formState: { errors, isDirty }, reset, getValues } = useForm<ShopFormData>({
     resolver: zodResolver(shopSchema),
     defaultValues: {
-      shop_types: [],
+      name: "",
+      address: "", 
       country: "JP",
-      tags: []
+      region: "",
+      shop_types: [],
+      tags: [],
+      business_hours: getDefaultBusinessHours(),
+      closed_days: [],
+      google_place_id: ""
     }
   })
 
@@ -102,6 +107,25 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
   const countryValue = watch("country")
   const nameValue = watch("name")
   const businessHours = watch("business_hours")
+
+  // Convert RAMEN_TYPES to options format for the MultipleSelector
+  const ramenTypeOptions = RAMEN_TYPES.map(type => ({
+    value: type,
+    label: type
+  }));
+
+  // Convert array of tags to MultipleSelector options format
+  const tagsToOptions = (tags: string[] = []): Option[] => {
+    return tags.map(tag => ({
+      value: tag,
+      label: tag
+    }));
+  };
+
+  // Extract tag values from options
+  const optionsToTags = (options: Option[]): string[] => {
+    return options.map(option => option.value);
+  };
 
   useEffect(() => {
     const fetchShop = async () => {
@@ -115,7 +139,7 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
             country: shop.country,
             region: shop.region,
             shop_types: shop.shop_types,
-            tags: shop.tags?.map((tag, index) => ({ id: index.toString(), text: tag })) || [],
+            tags: shop.tags || [], // Use string array directly
             business_hours: shop.business_hours || getDefaultBusinessHours(),
             closed_days: [],
             google_place_id: shop.google_place_id
@@ -665,38 +689,18 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
               name="shop_types"
               control={control}
               render={({ field }) => (
-                <Select
-                  value={field.value?.[0] || ""}
-                  onValueChange={(value: string) => {
-                    const currentValues = new Set(field.value || []);
-                    if (currentValues.has(value)) {
-                      currentValues.delete(value);
-                    } else {
-                      currentValues.add(value);
-                    }
-                    field.onChange(Array.from(currentValues));
+                <MultipleSelector
+                  placeholder="選擇拉麵類型"
+                  defaultOptions={ramenTypeOptions}
+                  value={field.value.map(type => ({ value: type, label: type }))}
+                  onChange={(selectedOptions) => {
+                    field.onChange(selectedOptions.map(option => option.value));
                   }}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="選擇拉麵類型">
-                      {field.value.length > 0 
-                        ? field.value.join(", ")
-                        : "選擇拉麵類型"
-                      }
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {RAMEN_TYPES.map((type) => (
-                      <SelectItem 
-                        key={type} 
-                        value={type}
-                        className={field.value.includes(type) ? "bg-accent" : ""}
-                      >
-                        {type}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  className="w-full"
+                  emptyIndicator={<p className="text-center text-sm">找不到拉麵類型</p>}
+                  hidePlaceholderWhenSelected
+                  hideClearAllButton={field.value.length === 0}
+                />
               )}
             />
             {errors.shop_types && (
@@ -711,13 +715,18 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
               name="tags"
               control={control}
               render={({ field }) => (
-                <TagInput
-                  {...field}
+                <MultipleSelector
                   placeholder="輸入標籤..."
-                  tags={field.value}
-                  setTags={field.onChange}
-                  activeTagIndex={activeTagIndex}
-                  setActiveTagIndex={setActiveTagIndex}
+                  value={tagsToOptions(field.value)}
+                  onChange={(selectedOptions) => {
+                    field.onChange(optionsToTags(selectedOptions));
+                  }}
+                  className="w-full"
+                  emptyIndicator={<p className="text-center text-sm">尚未有標籤</p>}
+                  hidePlaceholderWhenSelected
+                  creatable
+                  hideSearch
+                  triggerSearchOnFocus={false}
                 />
               )}
             />
@@ -848,17 +857,17 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
                     <AlertDialogDescription>
                       此操作無法復原。所有與此店家相關的資料都將被永久刪除。
                     </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel onClick={() => setIsDeleteDialogOpen(false)}>取消</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={handleDelete}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                      確定刪除
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel onClick={() => setIsDeleteDialogOpen(false)}>取消</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleDelete}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        確定刪除
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
               </AlertDialog>
               <Button
                 type="button"
