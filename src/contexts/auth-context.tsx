@@ -4,6 +4,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
   signOut as firebaseSignOut,
@@ -45,6 +47,12 @@ const getAuthErrorMessage = (errorCode: string): string => {
   }
 };
 
+// Helper to detect production environment
+const isProductionEnvironment = () => {
+  return process.env.NODE_ENV === 'production' || 
+         window.location.hostname.includes('vercel.app');
+};
+
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -55,6 +63,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isAdmin = user?.role === 'ADMIN';
 
   useEffect(() => {
+    const handleRedirectResult = async () => {
+      try {
+        console.log("Checking for redirect result...");
+        const result = await getRedirectResult(auth);
+        
+        if (result) {
+          console.log("Redirect result found, processing...");
+          const firebaseUser = result.user;
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          
+          if (userDoc.exists()) {
+            const userData = userDoc.data() as UserProfile;
+            
+            // Update user state
+            setUser({
+              ...userData,
+              emailVerified: firebaseUser.emailVerified
+            });
+            
+            console.log("Google redirect sign-in successful");
+          } else {
+            // User is authenticated but doesn't have a profile yet
+            // This would happen if they were signing up with Google
+            // They'll be prompted for an invite code in the UI
+            console.log("User authenticated but profile not found");
+            
+            // See if we're in the middle of Google signup
+            const pendingInviteCode = localStorage.getItem('pendingInviteCode');
+            if (pendingInviteCode) {
+              console.log("Found pending invite code, completing signup");
+              try {
+                const validInviteCode = await validateInviteCode(pendingInviteCode);
+                
+                const userProfile = await createUserProfile(
+                  firebaseUser,
+                  firebaseUser.displayName,
+                  validInviteCode.id,
+                  'google'
+                );
+
+                // Mark invite code as used immediately
+                await updateDoc(doc(db, 'inviteCodes', validInviteCode.id), {
+                  isUsed: true,
+                  usedBy: firebaseUser.uid,
+                  usedAt: new Date()
+                });
+
+                setUser({
+                  ...userProfile,
+                  emailVerified: firebaseUser.emailVerified
+                });
+                
+                localStorage.removeItem('pendingInviteCode');
+              } catch (err) {
+                console.error("Error completing Google signup with invite code:", err);
+                // Handle this error in the UI - at this point the user is 
+                // authenticated with Google but not fully registered
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error handling redirect result:", err);
+        setError(err instanceof Error ? err.message : 'Authentication error from redirect');
+      }
+    };
+
+    // Check for auth redirect result first
+    handleRedirectResult();
+
+    // Then set up the auth state listener
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
@@ -82,8 +161,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
             }
             
-            // Set email verification cookie
-            document.cookie = `emailVerified=${firebaseUser.emailVerified}; path=/`;
+            // Set email verification cookie with secure settings
+            document.cookie = `emailVerified=${firebaseUser.emailVerified}; path=/; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
             
             setUser({
               ...userData,
@@ -212,31 +291,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(true);
       const provider = new GoogleAuthProvider();
       
-      const { user: firebaseUser } = await signInWithPopup(auth, provider);
-      const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      console.log("Starting Google sign-in process");
       
-      if (userDoc.exists()) {
-        const userData = userDoc.data() as UserProfile;
+      if (isProductionEnvironment()) {
+        console.log("Using redirect method for production environment");
+        // Store current path to redirect back after authentication
+        localStorage.setItem('authRedirectPath', window.location.pathname);
         
-        // If user exists but was created with password, prevent Google sign-in
-        if (userData.authMethod === 'password') {
-          throw new Error('此帳號已使用密碼註冊。請使用密碼登入。');
-        }
-        
-        setUser({
-          ...userData,
-          emailVerified: firebaseUser.emailVerified
-        });
+        // Use redirect for production environments (Vercel)
+        await signInWithRedirect(auth, provider);
+        // This won't return - the page will redirect to Google
+        return;
       } else {
-        // Check if email is already used with password auth
-        const methods = await fetchSignInMethodsForEmail(auth, firebaseUser.email!);
-        if (methods.includes('password')) {
-          throw new Error('此電子郵件已使用密碼註冊。請使用密碼登入。');
-        }
+        console.log("Using popup method for development environment");
+        // Use popup for local development
+        const { user: firebaseUser } = await signInWithPopup(auth, provider);
+        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         
-        // New user attempting to sign in with Google
-        // Instead of throwing an error, we'll throw a special error that the UI can handle
-        throw new Error('NEEDS_INVITE_CODE');
+        if (userDoc.exists()) {
+          const userData = userDoc.data() as UserProfile;
+          
+          // If user exists but was created with password, prevent Google sign-in
+          if (userData.authMethod === 'password') {
+            throw new Error('此帳號已使用密碼註冊。請使用密碼登入。');
+          }
+          
+          setUser({
+            ...userData,
+            emailVerified: firebaseUser.emailVerified
+          });
+        } else {
+          // Check if email is already used with password auth
+          const methods = await fetchSignInMethodsForEmail(auth, firebaseUser.email!);
+          if (methods.includes('password')) {
+            throw new Error('此電子郵件已使用密碼註冊。請使用密碼登入。');
+          }
+          
+          // New user attempting to sign in with Google
+          throw new Error('NEEDS_INVITE_CODE');
+        }
       }
     } catch (err: any) {
       // Handle the case where email exists but with different auth method
@@ -251,8 +344,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       // Check for specific Firebase error codes
       if (err.code) {
+        console.error("Google sign-in error code:", err.code);
         setError(getAuthErrorMessage(err.code));
       } else {
+        console.error("Google sign-in error:", err);
         setError(err instanceof Error ? err.message : 'An error occurred during Google sign in');
       }
       
@@ -304,33 +399,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setError(null);
       setIsLoading(true);
-      const validInviteCode = await validateInviteCode(inviteCode);
       
-      const provider = new GoogleAuthProvider();
-      const { user: firebaseUser } = await signInWithPopup(auth, provider);
-      const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+      await validateInviteCode(inviteCode);
       
-      if (!userDoc.exists()) {
-        const userProfile = await createUserProfile(
-          firebaseUser,
-          firebaseUser.displayName,
-          validInviteCode.id,
-          'google'
-        );
-
-        // Mark invite code as used immediately since Google accounts are pre-verified
-        await updateDoc(doc(db, 'inviteCodes', validInviteCode.id), {
-          isUsed: true,
-          usedBy: firebaseUser.uid,
-          usedAt: new Date()
-        });
-
-        setUser({
-          ...userProfile,
-          emailVerified: firebaseUser.emailVerified
-        });
+      // In production, use redirect flow
+      if (isProductionEnvironment()) {
+        console.log("Using redirect method for Google signup in production");
+        
+        // Store invite code for post-redirect processing
+        localStorage.setItem('pendingInviteCode', inviteCode);
+        
+        const provider = new GoogleAuthProvider();
+        await signInWithRedirect(auth, provider);
+        // This won't return - the page will redirect to Google
+        return;
       } else {
-        throw new Error('已存在之使用者，請直接登入');
+        // In development, use popup flow
+        const validInviteCode = await validateInviteCode(inviteCode);
+        
+        const provider = new GoogleAuthProvider();
+        const { user: firebaseUser } = await signInWithPopup(auth, provider);
+        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+        
+        if (!userDoc.exists()) {
+          const userProfile = await createUserProfile(
+            firebaseUser,
+            firebaseUser.displayName,
+            validInviteCode.id,
+            'google'
+          );
+
+          // Mark invite code as used immediately since Google accounts are pre-verified
+          await updateDoc(doc(db, 'inviteCodes', validInviteCode.id), {
+            isUsed: true,
+            usedBy: firebaseUser.uid,
+            usedAt: new Date()
+          });
+
+          setUser({
+            ...userProfile,
+            emailVerified: firebaseUser.emailVerified
+          });
+        } else {
+          throw new Error('已存在之使用者，請直接登入');
+        }
       }
     } catch (err: any) {
       // Check for specific Firebase error codes

@@ -69,10 +69,13 @@ export function LoginForm({
 
   const handleGoogleSignIn = async () => {
     setError("")
+    console.log("Starting Google sign-in process");
     try {
       await signInWithGoogle()
+      console.log("Google sign-in successful, redirecting...");
       router.push("/dashboard")
     } catch (err: any) {
+      console.error("Google sign-in error:", err);
       if (err instanceof Error && err.message === 'NEEDS_INVITE_CODE') {
         setIsInviteDialogOpen(true)
       } else {
