@@ -312,165 +312,74 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setError(null);
       setIsLoading(true);
-      
+    
       // Ensure persistent login
       await setPersistence(auth, browserLocalPersistence);
-      
+    
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({
         prompt: 'select_account'
       });
-      
+    
       console.log("Starting Google sign-in process");
+    
+      // SIMPLIFIED: Let Firebase handle the popup directly
+      const result = await signInWithPopup(auth, provider);
+      console.log("Google sign-in successful", result.user.uid);
+    
+      // Set auth token cookie
+      const idToken = await result.user.getIdToken(true);
+      setCookie('token', idToken);
+    
+      // Get user data
+      const userDoc = await getDoc(doc(db, 'users', result.user.uid));
+    
+      if (userDoc.exists()) {
+        const userData = userDoc.data() as UserProfile;
       
-      // Use a consistent popup approach for both environments
-      const popupWindow = window.open('about:blank', 'googleAuthPopup', 
-        'width=500,height=600,top=50,left=50');
+        // Set email verification cookie
+        setCookie('emailVerified', String(result.user.emailVerified));
       
-      if (!popupWindow) {
-        throw new Error("彈出視窗被阻擋，請允許彈出視窗後再試一次");
+        // Update user state
+        setUser({
+          ...userData,
+          emailVerified: result.user.emailVerified
+        });
+      
+        // Redirect to dashboard
+        window.location.href = '/dashboard?auth=' + Date.now();
+      } else {
+        // New user needs to sign up
+        console.log("User authenticated but profile not found, redirecting to signup");
+        window.location.href = '/signup?google=1';
       }
-      
-      // Show loading message in popup
-      popupWindow.document.write(`
-        <html>
-          <head>
-            <title>Google 登入</title>
-            <style>
-              body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-              .loader { border: 5px solid #f3f3f3; border-top: 5px solid #3498db; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
-              @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-              .container { text-align: center; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="loader"></div>
-              <h3>Google 登入中，請稍候...</h3>
-            </div>
-          </body>
-        </html>
-      `);
-      
-      // Handle authentication in popup
-      setTimeout(async () => {
-        try {
-          const result = await signInWithPopup(auth, provider);
-          const idToken = await result.user.getIdToken(true); // Force refresh token
-          
-          // Set auth data in localStorage for the main window to access
-          try {
-            localStorage.setItem('pendingAuthUID', result.user.uid);
-            localStorage.setItem('pendingAuthToken', idToken);
-            localStorage.setItem('pendingAuthEmailVerified', String(result.user.emailVerified));
-            localStorage.setItem('pendingAuthTimestamp', String(Date.now()));
-            
-            console.log("Auth success: data stored in localStorage");
-          } catch (storageErr) {
-            console.error("Failed to store auth data:", storageErr);
-          }
-          
-          // Process user data within the popup
-          const userDoc = await getDoc(doc(db, 'users', result.user.uid));
-          
-          if (userDoc.exists()) {
-            // Close popup window - auth is successful
-            popupWindow.close();
-            
-            // Set cookies in popup (might help in some cases)
-            try {
-              setCookie('token', idToken);
-              setCookie('emailVerified', String(result.user.emailVerified));
-            } catch (cookieErr) {
-              console.error("Error setting cookies in popup:", cookieErr);
-            }
-            
-            // Try to communicate with opener
-            try {
-              if (window.opener && !window.opener.closed) {
-                window.opener.postMessage({
-                  type: 'FIREBASE_AUTH_SUCCESS',
-                  uid: result.user.uid,
-                  token: idToken,
-                  emailVerified: result.user.emailVerified
-                }, window.location.origin);
-                
-                console.log("Auth success message sent to opener");
-              }
-            } catch (messageErr) {
-              console.error("Error sending message to opener:", messageErr);
-            }
-            
-            // Reload main window (as fallback)
-            try {
-              if (window.opener && !window.opener.closed) {
-                window.opener.location.href = '/dashboard?auth=' + Date.now();
-              }
-            } catch (navigateErr) {
-              console.error("Error navigating opener:", navigateErr);
-            }
-          } else {
-            // New user needs invite code
-            popupWindow.close();
-            window.location.href = '/signup?google=1';
-          }
-        } catch (err: any) {
-          console.error("Google auth error in popup:", err);
-          
-          if (err.message === 'NEEDS_INVITE_CODE') {
-            popupWindow.close();
-            window.location.href = '/signup?google=1';
-          } else {
-            popupWindow.close();
-            
-            // Pass error back to main window by refreshing it
-            try {
-              localStorage.setItem('authError', err.code || err.message || 'Unknown error');
-              window.location.reload();
-            } catch (e) {
-              console.error("Failed to store error:", e);
-              window.location.reload();
-            }
-          }
-        }
-      }, 500);
-      
-      // Set up message listener in main window to handle popup communication
-      window.addEventListener('message', async (event) => {
-        if (event.origin !== window.location.origin) return;
-        
-        if (event.data?.type === 'FIREBASE_AUTH_SUCCESS') {
-          console.log("Received auth success message from popup");
-          
-          // Set cookies in main window
-          setCookie('token', event.data.token);
-          setCookie('emailVerified', String(event.data.emailVerified));
-          
-          // Navigate to dashboard
-          window.location.href = '/dashboard?auth=' + Date.now();
-        }
-      }, { once: true });
-      
-      // Check for auth errors in local storage (after popup closes)
-      const checkAuthErrorInterval = setInterval(() => {
-        const authError = localStorage.getItem('authError');
-        if (authError) {
-          console.error("Auth error from popup:", authError);
-          localStorage.removeItem('authError');
-          setError(authError);
-          clearInterval(checkAuthErrorInterval);
-        }
-      }, 1000);
-      
-      // Clear interval after 30 seconds
-      setTimeout(() => {
-        clearInterval(checkAuthErrorInterval);
-      }, 30000);
-      
     } catch (err: any) {
       console.error("Google sign-in error:", err);
-      setError(err instanceof Error ? err.message : 'Authentication error');
-      throw err;
+    
+      // Handle popup closed error gracefully
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError('登入視窗已關閉，請重試');
+        return;
+      }
+    
+      // Handle existing account with different auth method
+      if (err.code === 'auth/account-exists-with-different-credential') {
+        const email = err.customData?.email;
+        if (email) {
+          const methods = await fetchSignInMethodsForEmail(auth, email);
+          setError(`此電子郵件已使用${methods.includes('password') ? '密碼' : '其他'}方式註冊。請使用該方式登入。`);
+        } else {
+          setError('此帳號已使用其他方式註冊，請使用該方式登入。');
+        }
+        return;
+      }
+    
+      // General error handling
+      if (err.code) {
+        setError(getAuthErrorMessage(err.code));
+      } else {
+        setError(err instanceof Error ? err.message : 'Authentication error');
+      }
     } finally {
       setIsLoading(false);
     }
