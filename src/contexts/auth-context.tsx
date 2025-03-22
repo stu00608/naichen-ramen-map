@@ -71,6 +71,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (result) {
           console.log("Redirect result found, processing...");
           const firebaseUser = result.user;
+          
+          // Get and set the auth token cookie
+          const idToken = await firebaseUser.getIdToken();
+          document.cookie = `token=${idToken}; path=/; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
+          
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
           
           if (userDoc.exists()) {
@@ -82,7 +87,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               emailVerified: firebaseUser.emailVerified
             });
             
+            // Set email verification cookie
+            document.cookie = `emailVerified=${firebaseUser.emailVerified}; path=/; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
+            
             console.log("Google redirect sign-in successful");
+            
+            // Get the stored redirect path and navigate to it
+            const redirectPath = localStorage.getItem('authRedirectPath') || '/dashboard';
+            localStorage.removeItem('authRedirectPath');
+            console.log("Redirecting to:", redirectPath);
+            
+            // Use window.location for full page navigation
+            window.location.href = redirectPath;
           } else {
             // User is authenticated but doesn't have a profile yet
             // This would happen if they were signing up with Google
@@ -115,12 +131,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   emailVerified: firebaseUser.emailVerified
                 });
                 
+                // Set auth and verification cookies
+                document.cookie = `token=${idToken}; path=/; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
+                document.cookie = `emailVerified=${firebaseUser.emailVerified}; path=/; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
+                
                 localStorage.removeItem('pendingInviteCode');
+                
+                // Redirect to dashboard after successful signup
+                window.location.href = '/dashboard';
               } catch (err) {
                 console.error("Error completing Google signup with invite code:", err);
-                // Handle this error in the UI - at this point the user is 
-                // authenticated with Google but not fully registered
+                // Redirect to login page to try again
+                window.location.href = '/login';
               }
+            } else {
+              // User authenticated but no profile and no pending invite code
+              // Redirect to login page
+              console.log("No pending invite code found, redirecting to login");
+              window.location.href = '/login';
             }
           }
         }
@@ -137,6 +165,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
+          // Get and set the auth token cookie
+          const idToken = await firebaseUser.getIdToken();
+          document.cookie = `token=${idToken}; path=/; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
+          
           const userRef = doc(db, 'users', firebaseUser.uid);
           const userDoc = await getDoc(userRef);
           
@@ -171,7 +203,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           setUser(null);
-          // Remove email verification cookie
+          // Remove auth and verification cookies
+          document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT';
           document.cookie = 'emailVerified=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT';
         }
       } catch (err) {
@@ -183,6 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
+  // Rest of your code remains the same
   const validateInviteCode = async (code: string): Promise<InviteCode> => {
     const inviteCodesRef = collection(db, 'inviteCodes');
     const q = query(inviteCodesRef, where('code', '==', code), where('isUsed', '==', false));
@@ -255,6 +289,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       const { user: firebaseUser } = await signInWithEmailAndPassword(auth, email, password);
+      
+      // Set auth token cookie
+      const idToken = await firebaseUser.getIdToken();
+      document.cookie = `token=${idToken}; path=/; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
+      
       const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
       
       if (userDoc.exists()) {
@@ -306,6 +345,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log("Using popup method for development environment");
         // Use popup for local development
         const { user: firebaseUser } = await signInWithPopup(auth, provider);
+        
+        // Set auth token cookie
+        const idToken = await firebaseUser.getIdToken();
+        document.cookie = `token=${idToken}; path=/; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
+        
         const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         
         if (userDoc.exists()) {
