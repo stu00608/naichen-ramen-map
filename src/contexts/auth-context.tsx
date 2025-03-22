@@ -22,6 +22,7 @@ import {
 import { doc, getDoc, setDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { AuthContextType, UserProfile, InviteCode, AuthMethod } from '@/types/auth';
+import { setPersistence, browserLocalPersistence } from 'firebase/auth';
 
 // Function to get user-friendly error messages
 const getAuthErrorMessage = (errorCode: string): string => {
@@ -62,6 +63,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isAdmin = user?.role === 'ADMIN';
 
+  // Initialize Firebase persistence
+  useEffect(() => {
+    // Set persistent login
+    setPersistence(auth, browserLocalPersistence).catch(err => {
+      console.error("Error setting persistence:", err);
+    });
+  }, []);
+
+  // Now modify your handleRedirectResult function
   useEffect(() => {
     const handleRedirectResult = async () => {
       try {
@@ -73,17 +83,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Set a flag to prevent multiple redirect attempts
         let redirectHandled = false;
     
-        const result = await getRedirectResult(auth);
+        // NEW: First check if we're already logged in
+        const currentUser = auth.currentUser;
+        console.log("Current Firebase user:", currentUser?.uid);
+        
+        // Check for redirect result
+        const result = await getRedirectResult(auth).catch(err => {
+          console.error("Error getting redirect result:", err);
+          return null;
+        });
+        
+        // NEW: Prioritize current user over redirect result
+        const firebaseUser = result?.user || currentUser;
     
-        if (result) {
-          console.log("Redirect result found, processing...");
-          const firebaseUser = result.user;
-      
+        if (firebaseUser) {
+          console.log("Authentication user found:", firebaseUser.uid);
+          
           // IMPORTANT: Remove pending auth flag immediately
           sessionStorage.removeItem('pendingGoogleAuth');
       
           // Get and set the auth token cookie with a long expiration
-          const idToken = await firebaseUser.getIdToken();
+          const idToken = await firebaseUser.getIdToken(true); // Force refresh
           const expiryDate = new Date();
           expiryDate.setDate(expiryDate.getDate() + 14); // 14 days
       
@@ -103,52 +123,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Set email verification cookie with the same expiration
             document.cookie = `emailVerified=${firebaseUser.emailVerified}; path=/; expires=${expiryDate.toUTCString()}; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
         
-            console.log("Google redirect sign-in successful");
-        
-            // Add a short delay to ensure cookies are processed
-            await new Promise(resolve => setTimeout(resolve, 500));
-        
-            // Get the stored redirect path and navigate to it
-            let redirectPath = localStorage.getItem('authRedirectPath') || '/dashboard';
-            if (redirectPath === '/login') redirectPath = '/dashboard';
-        
-            localStorage.removeItem('authRedirectPath');
-            console.log("Redirecting to:", redirectPath);
-        
-            // Use window.location for full page navigation with a cache-busting parameter
-            redirectHandled = true;
-            window.location.href = `${redirectPath}?auth=${Date.now()}`;
+            console.log("User data retrieved, login successful");
+            
+            // NEW: Break redirect loop by using a special flag in sessionStorage
+            if (window.location.pathname === '/login') {
+              sessionStorage.setItem('forceBreakRedirectLoop', 'true');
+              
+              // Add a short delay to ensure cookies are processed
+              await new Promise(resolve => setTimeout(resolve, 800));
+              
+              console.log("Redirecting to dashboard from login page");
+              redirectHandled = true;
+              window.location.href = `/dashboard?auth=${Date.now()}`;
+            }
           } else {
             // Handle existing code for users without profiles...
+            console.log("User authenticated but no profile found");
           }
         } else if (isPendingAuth === 'true') {
-          // We're in a pending auth state but don't have a result yet
-          // This could happen if the redirect just completed and we're reloading
-          console.log("In pending auth state but no redirect result yet");
-      
-          // Check if we have an auth token but just haven't processed the redirect result
-          const token = document.cookie.split('; ').find(row => row.startsWith('token='));
-      
-          if (token) {
-            console.log("Found token cookie, attempting direct navigation");
+          console.log("In pending auth state but no user found");
+          
+          // NEW: Add special case for when we're stuck in a login loop
+          const isBreakingLoop = sessionStorage.getItem('forceBreakRedirectLoop');
+          if (isBreakingLoop === 'true') {
+            console.log("Breaking redirect loop with force flag");
+            sessionStorage.removeItem('forceBreakRedirectLoop');
             sessionStorage.removeItem('pendingGoogleAuth');
-        
-            // We have a token, so we're probably authenticated
-            // Navigate to dashboard with cache busting
+            
+            // Try to navigate to dashboard again as a last resort
             redirectHandled = true;
-            window.location.href = `/dashboard?auth=${Date.now()}`;
+            window.location.href = `/dashboard?auth=${Date.now()}&force=true`;
+            return;
           }
-        }
-    
-        // If we're here and no redirect was handled but we have a pending auth,
-        // clear the pending flag to prevent loops
-        if (!redirectHandled && isPendingAuth === 'true') {
-          console.log("Clearing pending auth flag without successful redirect");
+          
+          // Just clear the flag and let the middleware handle it
+          console.log("Clearing pending auth flag, will try again");
           sessionStorage.removeItem('pendingGoogleAuth');
         }
       } catch (err) {
         console.error("Error handling redirect result:", err);
         sessionStorage.removeItem('pendingGoogleAuth');
+        sessionStorage.removeItem('forceBreakRedirectLoop');
         setError(err instanceof Error ? err.message : 'Authentication error from redirect');
       }
     };
@@ -319,11 +334,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Modify signInWithGoogle to use persistence
   const signInWithGoogle = async () => {
     try {
       setError(null);
       setIsLoading(true);
+      
+      // NEW: Ensure we're using persistent authentication
+      await setPersistence(auth, browserLocalPersistence);
+      
       const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({
+        // Force account selection even if only one account is available
+        prompt: 'select_account'
+      });
     
       console.log("Starting Google sign-in process");
     
@@ -332,6 +356,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
         // Set pending auth flag in sessionStorage
         sessionStorage.setItem('pendingGoogleAuth', 'true');
+        sessionStorage.removeItem('forceBreakRedirectLoop');
       
         // FIXED: Always redirect to dashboard after successful Google login
         const redirectPath = '/dashboard'; // Always redirect to dashboard to avoid loops
