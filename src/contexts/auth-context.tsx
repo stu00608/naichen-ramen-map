@@ -4,8 +4,6 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
   signOut as firebaseSignOut,
@@ -17,12 +15,12 @@ import {
   linkWithPopup,
   fetchSignInMethodsForEmail,
   AuthErrorCodes,
-  unlink,
+  browserLocalPersistence,
+  setPersistence,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { AuthContextType, UserProfile, InviteCode, AuthMethod } from '@/types/auth';
-import { setPersistence, browserLocalPersistence } from 'firebase/auth';
 
 // Function to get user-friendly error messages
 const getAuthErrorMessage = (errorCode: string): string => {
@@ -48,10 +46,20 @@ const getAuthErrorMessage = (errorCode: string): string => {
   }
 };
 
-// Helper to detect production environment
-const isProductionEnvironment = () => {
-  return process.env.NODE_ENV === 'production' || 
-         window.location.hostname.includes('vercel.app');
+// Helper function to set cookies with proper attributes
+const setCookie = (name: string, value: string, days = 14) => {
+  const expiryDate = new Date();
+  expiryDate.setDate(expiryDate.getDate() + days);
+  
+  const secure = window.location.protocol === 'https:' ? 'Secure;' : '';
+  const sameSite = window.location.hostname.includes('vercel.app') ? 'None' : 'Strict';
+  
+  document.cookie = `${name}=${value}; path=/; expires=${expiryDate.toUTCString()}; SameSite=${sameSite}; ${secure}`;
+};
+
+// Helper function to remove cookies
+const removeCookie = (name: string) => {
+  document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;`;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -63,133 +71,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isAdmin = user?.role === 'ADMIN';
 
-  // Initialize Firebase persistence
+  // Set up persistent login on mount
   useEffect(() => {
-    // Set persistent login
+    console.log("Setting up Firebase persistence...");
     setPersistence(auth, browserLocalPersistence).catch(err => {
       console.error("Error setting persistence:", err);
     });
   }, []);
 
-  // Now modify your handleRedirectResult function
+  // Check for stored authentication data (localStorage fallback mechanism)
   useEffect(() => {
-    const handleRedirectResult = async () => {
-      try {
-        // Check for pending auth
-        const isPendingAuth = sessionStorage.getItem('pendingGoogleAuth');
-        console.log("Checking for redirect result...", { isPendingAuth });
-    
-        // Important: Create a listener for postMessage from popup
-        if (isPendingAuth === 'true') {
-          console.log("Pending auth detected, setting up message listener");
+    const checkStoredAuth = () => {
+      const pendingAuthUID = localStorage.getItem('pendingAuthUID');
+      const pendingAuthToken = localStorage.getItem('pendingAuthToken');
+      const pendingAuthEmailVerified = localStorage.getItem('pendingAuthEmailVerified');
+      const pendingAuthTimestamp = localStorage.getItem('pendingAuthTimestamp');
       
-          // Add event listener for message from popup window
-          window.addEventListener('message', async (event) => {
-            // Verify origin for security
-            if (event.origin !== window.location.origin) return;
+      if (pendingAuthUID && pendingAuthToken) {
+        const timestamp = parseInt(pendingAuthTimestamp || '0', 10);
+        const now = Date.now();
+        const fiveMinutesAgo = now - (5 * 60 * 1000);
         
-            if (event.data && event.data.type === 'FIREBASE_AUTH_SUCCESS') {
-              console.log("Received successful auth message from popup");
-              sessionStorage.removeItem('pendingGoogleAuth');
+        // Use stored auth data if it's less than 5 minutes old
+        if (timestamp > fiveMinutesAgo) {
+          console.log("Found valid stored auth data, applying it...");
           
-              // Force reload to update auth state
-              window.location.href = '/dashboard?auth=' + Date.now();
-            }
-          }, { once: true }); // Important: only listen once
-        }
-    
-        // Continue with existing redirect result logic, but make it faster
-        const result = await getRedirectResult(auth).catch(err => {
-          console.error("Error getting redirect result:", err);
-          return null;
-        });
-    
-        // Get current user (may be null initially after redirect)
-        const currentUser = auth.currentUser;
-        console.log("Current Firebase user:", currentUser?.uid);
-    
-        // Use either result or current user
-        const firebaseUser = result?.user || currentUser;
-    
-        if (firebaseUser) {
-          console.log("Firebase user found:", firebaseUser.uid);
-          sessionStorage.removeItem('pendingGoogleAuth');
-      
-          // Set cookies with long expiration
-          const idToken = await firebaseUser.getIdToken(true);
-          const expiryDate = new Date();
-          expiryDate.setDate(expiryDate.getDate() + 14);
-      
-          document.cookie = `token=${idToken}; path=/; expires=${expiryDate.toUTCString()}; SameSite=None; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
-      
-          // Process user data and redirect
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-      
-          if (userDoc.exists()) {
-            const userData = userDoc.data() as UserProfile;
-        
-            // Update user state
-            setUser({
-              ...userData,
-              emailVerified: firebaseUser.emailVerified
-            });
-        
-            // Set email verification cookie with the same expiration
-            document.cookie = `emailVerified=${firebaseUser.emailVerified}; path=/; expires=${expiryDate.toUTCString()}; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
-        
-            console.log("User data retrieved, login successful");
-            
-            // NEW: Break redirect loop by using a special flag in sessionStorage
-            if (window.location.pathname === '/login') {
-              sessionStorage.setItem('forceBreakRedirectLoop', 'true');
-              
-              // Add a short delay to ensure cookies are processed
-              await new Promise(resolve => setTimeout(resolve, 800));
-              
-              console.log("Redirecting to dashboard from login page");
-              window.location.href = `/dashboard?auth=${Date.now()}`;
-            }
-
-            // Explicitly redirect to dashboard
-            console.log("Redirecting to dashboard");
-            window.location.href = `/dashboard?auth=${Date.now()}`;
-          } else {
-            // Handle existing code for users without profiles...
-            console.log("User authenticated but no profile found");
+          // Set cookies from stored data
+          setCookie('token', pendingAuthToken);
+          setCookie('emailVerified', pendingAuthEmailVerified || 'false');
+          
+          // Clear stored auth data
+          localStorage.removeItem('pendingAuthUID');
+          localStorage.removeItem('pendingAuthToken');
+          localStorage.removeItem('pendingAuthEmailVerified');
+          localStorage.removeItem('pendingAuthTimestamp');
+          
+          // If we're on the login page, redirect to dashboard
+          if (window.location.pathname === '/login') {
+            window.location.href = `/dashboard?auth=${now}`;
           }
-        } else if (isPendingAuth === 'true') {
-          console.log("No Firebase user found but pending auth is true");
-      
-          // We'll leave the pending flag because we set up the message listener
-          // It will be cleared when the popup sends a message or after 60 seconds
-      
-          // Set a timeout to clear pending state if no message received (prevent being stuck)
-          setTimeout(() => {
-            if (sessionStorage.getItem('pendingGoogleAuth') === 'true') {
-              console.log("Auth timeout - clearing pending state");
-              sessionStorage.removeItem('pendingGoogleAuth');
-          
-              // Reload the page to reset state
-              window.location.reload();
-            }
-          }, 60000);
+        } else {
+          // Clear old auth data
+          localStorage.removeItem('pendingAuthUID');
+          localStorage.removeItem('pendingAuthToken');
+          localStorage.removeItem('pendingAuthEmailVerified');
+          localStorage.removeItem('pendingAuthTimestamp');
         }
-      } catch (err) {
-        console.error("Error in handleRedirectResult:", err);
-        sessionStorage.removeItem('pendingGoogleAuth');
       }
     };
 
-    // Check for auth redirect result first
-    handleRedirectResult();
+    checkStoredAuth();
+  }, []);
 
-    // Then set up the auth state listener
+  // Auth state observer setup
+  useEffect(() => {
+    console.log("Setting up auth state observer...");
+    
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
+          console.log("Auth state changed: User logged in", firebaseUser.uid);
+          
           // Get and set the auth token cookie
-          const idToken = await firebaseUser.getIdToken();
-          document.cookie = `token=${idToken}; path=/; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
+          const idToken = await firebaseUser.getIdToken(true);
+          setCookie('token', idToken);
           
           const userRef = doc(db, 'users', firebaseUser.uid);
           const userDoc = await getDoc(userRef);
@@ -215,19 +160,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
             }
             
-            // Set email verification cookie with secure settings
-            document.cookie = `emailVerified=${firebaseUser.emailVerified}; path=/; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
+            // Set email verification cookie
+            setCookie('emailVerified', String(firebaseUser.emailVerified));
             
             setUser({
               ...userData,
               emailVerified: firebaseUser.emailVerified
             });
+            
+            // Check if we're stuck on login page but should be redirected
+            if (window.location.pathname === '/login') {
+              const authTime = firebaseUser.metadata.creationTime || firebaseUser.metadata.lastSignInTime;
+              const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+              
+              // If authenticated in the last 5 minutes and on login page, redirect to dashboard
+              if (authTime && new Date(authTime).getTime() > fiveMinutesAgo) {
+                console.log("Recently authenticated but on login page, redirecting to dashboard");
+                window.location.href = `/dashboard?auth=${Date.now()}`;
+              }
+            }
           }
         } else {
+          console.log("Auth state changed: User logged out");
           setUser(null);
-          // Remove auth and verification cookies
-          document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT';
-          document.cookie = 'emailVerified=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT';
+          // Remove cookies
+          removeCookie('token');
+          removeCookie('emailVerified');
         }
       } catch (err) {
         console.error('Auth state change error:', err);
@@ -238,7 +196,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  // Rest of your code remains the same
+  // Helper functions
   const validateInviteCode = async (code: string): Promise<InviteCode> => {
     const inviteCodesRef = collection(db, 'inviteCodes');
     const q = query(inviteCodesRef, where('code', '==', code), where('isUsed', '==', false));
@@ -260,8 +218,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     inviteCodeId?: string,
     authMethod: AuthMethod = 'password'
   ): Promise<UserProfile> => {
-    const userRef = doc(db, "users", firebaseUser.uid)
-    const userSnap = await getDoc(userRef)
+    const userRef = doc(db, "users", firebaseUser.uid);
+    const userSnap = await getDoc(userRef);
 
     if (!userSnap.exists()) {
       const userData: UserProfile = {
@@ -277,13 +235,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         authMethod,
         createdAt: new Date(),
         updatedAt: new Date(),
-      }
+      };
 
-      await setDoc(userRef, userData)
-      return userData
+      await setDoc(userRef, userData);
+      return userData;
     }
 
-    const existingData = userSnap.data() as UserProfile
+    const existingData = userSnap.data() as UserProfile;
     const updatedData: UserProfile = {
       ...existingData,
       email: firebaseUser.email,
@@ -291,12 +249,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       avatar: firebaseUser.photoURL || existingData.avatar,
       emailVerified: firebaseUser.emailVerified,
       updatedAt: new Date(),
-    }
+    };
 
-    await setDoc(userRef, updatedData, { merge: true })
-    return updatedData
+    await setDoc(userRef, updatedData, { merge: true });
+    return updatedData;
   };
 
+  // Auth methods
   const signIn = async (email: string, password: string) => {
     try {
       setError(null);
@@ -313,8 +272,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { user: firebaseUser } = await signInWithEmailAndPassword(auth, email, password);
       
       // Set auth token cookie
-      const idToken = await firebaseUser.getIdToken();
-      document.cookie = `token=${idToken}; path=/; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
+      const idToken = await firebaseUser.getIdToken(true);
+      setCookie('token', idToken);
       
       const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
       
@@ -325,6 +284,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (userData.authMethod === 'google') {
           throw new Error('此帳號已使用 Google 登入。請點擊「使用 Google 登入」按鈕。');
         }
+
+        // Set email verification cookie
+        setCookie('emailVerified', String(firebaseUser.emailVerified));
 
         setUser({
           ...userData,
@@ -350,88 +312,162 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setError(null);
       setIsLoading(true);
-    
-      // Always use persistence
+      
+      // Ensure persistent login
       await setPersistence(auth, browserLocalPersistence);
-    
+      
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({
         prompt: 'select_account'
       });
-    
+      
       console.log("Starting Google sign-in process");
-    
-      // IMPORTANT CHANGE: Use popup for ALL environments
-      console.log("Using popup method for authentication");
-    
-      // Set pending flag
-      sessionStorage.setItem('pendingGoogleAuth', 'true');
-    
-      // Open the popup in a way that works around popup blockers
-      // by connecting it directly to user action
-      const authWindow = window.open('about:blank', 'googleAuthPopup', 
+      
+      // Use a consistent popup approach for both environments
+      const popupWindow = window.open('about:blank', 'googleAuthPopup', 
         'width=500,height=600,top=50,left=50');
-    
-      if (!authWindow) {
+      
+      if (!popupWindow) {
         throw new Error("彈出視窗被阻擋，請允許彈出視窗後再試一次");
       }
-    
-      // Immediately write some content to the popup to keep it alive
-      authWindow.document.write('<html><body><h3 style="font-family: sans-serif; text-align: center; margin-top: 100px;">Google 登入中，請稍候...</h3></body></html>');
-    
-      // Perform auth in this window, then post message back
+      
+      // Show loading message in popup
+      popupWindow.document.write(`
+        <html>
+          <head>
+            <title>Google 登入</title>
+            <style>
+              body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+              .loader { border: 5px solid #f3f3f3; border-top: 5px solid #3498db; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+              @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+              .container { text-align: center; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="loader"></div>
+              <h3>Google 登入中，請稍候...</h3>
+            </div>
+          </body>
+        </html>
+      `);
+      
+      // Handle authentication in popup
       setTimeout(async () => {
         try {
           const result = await signInWithPopup(auth, provider);
-          const idToken = await result.user.getIdToken();
-        
-          // Set cookies immediately in this window
-          document.cookie = `token=${idToken}; path=/; SameSite=None; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
-          document.cookie = `emailVerified=${result.user.emailVerified}; path=/; SameSite=None; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
-        
-          // Process user data
+          const idToken = await result.user.getIdToken(true); // Force refresh token
+          
+          // Set auth data in localStorage for the main window to access
+          try {
+            localStorage.setItem('pendingAuthUID', result.user.uid);
+            localStorage.setItem('pendingAuthToken', idToken);
+            localStorage.setItem('pendingAuthEmailVerified', String(result.user.emailVerified));
+            localStorage.setItem('pendingAuthTimestamp', String(Date.now()));
+            
+            console.log("Auth success: data stored in localStorage");
+          } catch (storageErr) {
+            console.error("Failed to store auth data:", storageErr);
+          }
+          
+          // Process user data within the popup
           const userDoc = await getDoc(doc(db, 'users', result.user.uid));
-        
+          
           if (userDoc.exists()) {
-            const userData = userDoc.data() as UserProfile;
-          
-            // Set user state
-            setUser({
-              ...userData,
-              emailVerified: result.user.emailVerified
-            });
-          
-            // Tell the main window we're successful
-            if (window.opener && !window.opener.closed) {
-              window.opener.postMessage({ 
-                type: 'FIREBASE_AUTH_SUCCESS',
-                uid: result.user.uid 
-              }, window.location.origin);
+            // Close popup window - auth is successful
+            popupWindow.close();
             
-              // Close this popup
-              authWindow.close();
+            // Set cookies in popup (might help in some cases)
+            try {
+              setCookie('token', idToken);
+              setCookie('emailVerified', String(result.user.emailVerified));
+            } catch (cookieErr) {
+              console.error("Error setting cookies in popup:", cookieErr);
+            }
             
-              // Redirect main window
-              window.location.href = '/dashboard?auth=' + Date.now();
+            // Try to communicate with opener
+            try {
+              if (window.opener && !window.opener.closed) {
+                window.opener.postMessage({
+                  type: 'FIREBASE_AUTH_SUCCESS',
+                  uid: result.user.uid,
+                  token: idToken,
+                  emailVerified: result.user.emailVerified
+                }, window.location.origin);
+                
+                console.log("Auth success message sent to opener");
+              }
+            } catch (messageErr) {
+              console.error("Error sending message to opener:", messageErr);
+            }
+            
+            // Reload main window (as fallback)
+            try {
+              if (window.opener && !window.opener.closed) {
+                window.opener.location.href = '/dashboard?auth=' + Date.now();
+              }
+            } catch (navigateErr) {
+              console.error("Error navigating opener:", navigateErr);
             }
           } else {
-            // Handle new user case
-            throw new Error('NEEDS_INVITE_CODE');
-          }
-        } catch (err) {
-          console.error("Error in popup auth:", err);
-          authWindow.close();
-          sessionStorage.removeItem('pendingGoogleAuth');
-        
-          if (err instanceof Error && err.message === 'NEEDS_INVITE_CODE') {
+            // New user needs invite code
+            popupWindow.close();
             window.location.href = '/signup?google=1';
+          }
+        } catch (err: any) {
+          console.error("Google auth error in popup:", err);
+          
+          if (err.message === 'NEEDS_INVITE_CODE') {
+            popupWindow.close();
+            window.location.href = '/signup?google=1';
+          } else {
+            popupWindow.close();
+            
+            // Pass error back to main window by refreshing it
+            try {
+              localStorage.setItem('authError', err.code || err.message || 'Unknown error');
+              window.location.reload();
+            } catch (e) {
+              console.error("Failed to store error:", e);
+              window.location.reload();
+            }
           }
         }
       }, 500);
-    
-      return;
-    } catch (err) {
-      sessionStorage.removeItem('pendingGoogleAuth');
+      
+      // Set up message listener in main window to handle popup communication
+      window.addEventListener('message', async (event) => {
+        if (event.origin !== window.location.origin) return;
+        
+        if (event.data?.type === 'FIREBASE_AUTH_SUCCESS') {
+          console.log("Received auth success message from popup");
+          
+          // Set cookies in main window
+          setCookie('token', event.data.token);
+          setCookie('emailVerified', String(event.data.emailVerified));
+          
+          // Navigate to dashboard
+          window.location.href = '/dashboard?auth=' + Date.now();
+        }
+      }, { once: true });
+      
+      // Check for auth errors in local storage (after popup closes)
+      const checkAuthErrorInterval = setInterval(() => {
+        const authError = localStorage.getItem('authError');
+        if (authError) {
+          console.error("Auth error from popup:", authError);
+          localStorage.removeItem('authError');
+          setError(authError);
+          clearInterval(checkAuthErrorInterval);
+        }
+      }, 1000);
+      
+      // Clear interval after 30 seconds
+      setTimeout(() => {
+        clearInterval(checkAuthErrorInterval);
+      }, 30000);
+      
+    } catch (err: any) {
       console.error("Google sign-in error:", err);
       setError(err instanceof Error ? err.message : 'Authentication error');
       throw err;
@@ -453,6 +489,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       // Send email verification
       await sendEmailVerification(firebaseUser);
+      
+      // Set auth token and email verification cookies
+      const idToken = await firebaseUser.getIdToken(true);
+      setCookie('token', idToken);
+      setCookie('emailVerified', String(firebaseUser.emailVerified));
       
       setUser({
         ...userProfile,
@@ -483,50 +524,93 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       setIsLoading(true);
       
-      await validateInviteCode(inviteCode);
+      // Validate invite code first
+      const validInviteCode = await validateInviteCode(inviteCode);
       
-      // In production, use redirect flow
-      if (isProductionEnvironment()) {
-        console.log("Using redirect method for Google signup in production");
-        
-        // Store invite code for post-redirect processing
-        localStorage.setItem('pendingInviteCode', inviteCode);
-        
-        const provider = new GoogleAuthProvider();
-        await signInWithRedirect(auth, provider);
-        // This won't return - the page will redirect to Google
-        return;
-      } else {
-        // In development, use popup flow
-        const validInviteCode = await validateInviteCode(inviteCode);
-        
-        const provider = new GoogleAuthProvider();
-        const { user: firebaseUser } = await signInWithPopup(auth, provider);
-        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        
-        if (!userDoc.exists()) {
+      // Use same approach for both environments - consistent popup method
+      console.log("Starting Google signup with invite code");
+      
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({
+        prompt: 'select_account'
+      });
+      
+      const popupWindow = window.open('about:blank', 'googleAuthPopup', 
+        'width=500,height=600,top=50,left=50');
+      
+      if (!popupWindow) {
+        throw new Error("彈出視窗被阻擋，請允許彈出視窗後再試一次");
+      }
+      
+      // Show loading message in popup
+      popupWindow.document.write(`
+        <html>
+          <head>
+            <title>Google 註冊</title>
+            <style>
+              body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+              .loader { border: 5px solid #f3f3f3; border-top: 5px solid #3498db; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+              @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+              .container { text-align: center; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="loader"></div>
+              <h3>Google 註冊中，請稍候...</h3>
+            </div>
+          </body>
+        </html>
+      `);
+      
+      // Handle authentication in popup
+      setTimeout(async () => {
+        try {
+          const result = await signInWithPopup(auth, provider);
+          const userDoc = await getDoc(doc(db, 'users', result.user.uid));
+          
+          if (userDoc.exists()) {
+            popupWindow.close();
+            throw new Error('此帳號已存在，請直接登入');
+          }
+          
           const userProfile = await createUserProfile(
-            firebaseUser,
-            firebaseUser.displayName,
+            result.user,
+            result.user.displayName,
             validInviteCode.id,
             'google'
           );
-
-          // Mark invite code as used immediately since Google accounts are pre-verified
+          
+          // Mark invite code as used immediately
           await updateDoc(doc(db, 'inviteCodes', validInviteCode.id), {
             isUsed: true,
-            usedBy: firebaseUser.uid,
+            usedBy: result.user.uid,
             usedAt: new Date()
           });
-
-          setUser({
-            ...userProfile,
-            emailVerified: firebaseUser.emailVerified
-          });
-        } else {
-          throw new Error('已存在之使用者，請直接登入');
+          
+          // Set auth token in localStorage for main window
+          const idToken = await result.user.getIdToken(true);
+          localStorage.setItem('pendingAuthUID', result.user.uid);
+          localStorage.setItem('pendingAuthToken', idToken);
+          localStorage.setItem('pendingAuthEmailVerified', String(result.user.emailVerified));
+          localStorage.setItem('pendingAuthTimestamp', String(Date.now()));
+          
+          popupWindow.close();
+          
+          // Redirect main window to dashboard
+          window.location.href = '/dashboard?auth=' + Date.now();
+        } catch (err: any) {
+          console.error("Google signup error in popup:", err);
+          popupWindow.close();
+          
+          // Handle error in main window
+          if (err.code) {
+            setError(getAuthErrorMessage(err.code));
+          } else {
+            setError(err instanceof Error ? err.message : 'An error occurred during Google sign up');
+          }
         }
-      }
+      }, 500);
     } catch (err: any) {
       // Check for specific Firebase error codes
       if (err.code) {
@@ -576,6 +660,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(true);
       await firebaseSignOut(auth);
       setUser(null);
+      
+      // Clear auth cookies
+      removeCookie('token');
+      removeCookie('emailVerified');
     } catch (err: any) {
       if (err.code) {
         setError(getAuthErrorMessage(err.code));
