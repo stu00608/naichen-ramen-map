@@ -656,26 +656,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAdmin,
-        isLoading,
-        error,
-        signIn,
-        signInWithGoogle,
-        signUp,
-        signUpWithGoogle,
-        signOut,
-        updateUserProfile,
-        sendPasswordReset,
-        linkGoogleAccount,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+const memoizedValue = React.useMemo(() => ({
+  user,
+  isAdmin,
+  isLoading,
+  error,
+  signIn,
+  signInWithGoogle,
+  signUp,
+  signUpWithGoogle,
+  signOut,
+  updateUserProfile,
+  sendPasswordReset,
+  linkGoogleAccount,
+}), [user, isAdmin, isLoading, error]);
+
+return (
+  <AuthContext.Provider value={memoizedValue}>
+    {children}
+  </AuthContext.Provider>
+);
+
+
+
 }
 
 export const useAuth = () => {
