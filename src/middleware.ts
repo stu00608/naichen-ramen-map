@@ -11,10 +11,10 @@ export async function middleware(request: NextRequest) {
   console.log("Email verified:", request.cookies.get('emailVerified')?.value);
 
   // Public routes that don't require auth
-  if (pathname === '/login' || pathname === '/' || 
+  if (pathname === '/login' || pathname === '/' || pathname === '/signup' || 
       pathname.startsWith('/verify') || pathname.includes('_next')) {
     // If already logged in, redirect from login page to dashboard
-    if (pathname === '/login' && token) {
+    if ((pathname === '/login' || pathname === '/signup') && token) {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
     return NextResponse.next()

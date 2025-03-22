@@ -346,8 +346,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           emailVerified: result.user.emailVerified
         });
       
-        // Redirect to dashboard
-        window.location.href = '/dashboard?auth=' + Date.now();
+        // Redirect to dashboard - add a small optimization to prevent double redirects
+        if (window.location.pathname !== '/dashboard') {
+          console.log("Redirecting to dashboard...");
+          setTimeout(() => {
+            window.location.href = '/dashboard?auth=' + Date.now();
+          }, 0);
+        }
+
       } else {
         // New user needs to sign up
         console.log("User authenticated but profile not found, redirecting to signup");
