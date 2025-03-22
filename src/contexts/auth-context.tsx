@@ -75,40 +75,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleRedirectResult = async () => {
       try {
-        // First check if we're in a pending auth state
+        // Check for pending auth
         const isPendingAuth = sessionStorage.getItem('pendingGoogleAuth');
-    
         console.log("Checking for redirect result...", { isPendingAuth });
     
-        // Set a flag to prevent multiple redirect attempts
-        let redirectHandled = false;
-    
-        // NEW: First check if we're already logged in
-        const currentUser = auth.currentUser;
-        console.log("Current Firebase user:", currentUser?.uid);
+        // Important: Create a listener for postMessage from popup
+        if (isPendingAuth === 'true') {
+          console.log("Pending auth detected, setting up message listener");
+      
+          // Add event listener for message from popup window
+          window.addEventListener('message', async (event) => {
+            // Verify origin for security
+            if (event.origin !== window.location.origin) return;
         
-        // Check for redirect result
+            if (event.data && event.data.type === 'FIREBASE_AUTH_SUCCESS') {
+              console.log("Received successful auth message from popup");
+              sessionStorage.removeItem('pendingGoogleAuth');
+          
+              // Force reload to update auth state
+              window.location.href = '/dashboard?auth=' + Date.now();
+            }
+          }, { once: true }); // Important: only listen once
+        }
+    
+        // Continue with existing redirect result logic, but make it faster
         const result = await getRedirectResult(auth).catch(err => {
           console.error("Error getting redirect result:", err);
           return null;
         });
-        
-        // NEW: Prioritize current user over redirect result
+    
+        // Get current user (may be null initially after redirect)
+        const currentUser = auth.currentUser;
+        console.log("Current Firebase user:", currentUser?.uid);
+    
+        // Use either result or current user
         const firebaseUser = result?.user || currentUser;
     
         if (firebaseUser) {
-          console.log("Authentication user found:", firebaseUser.uid);
-          
-          // IMPORTANT: Remove pending auth flag immediately
+          console.log("Firebase user found:", firebaseUser.uid);
           sessionStorage.removeItem('pendingGoogleAuth');
       
-          // Get and set the auth token cookie with a long expiration
-          const idToken = await firebaseUser.getIdToken(true); // Force refresh
+          // Set cookies with long expiration
+          const idToken = await firebaseUser.getIdToken(true);
           const expiryDate = new Date();
-          expiryDate.setDate(expiryDate.getDate() + 14); // 14 days
+          expiryDate.setDate(expiryDate.getDate() + 14);
       
-          document.cookie = `token=${idToken}; path=/; expires=${expiryDate.toUTCString()}; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
+          document.cookie = `token=${idToken}; path=/; expires=${expiryDate.toUTCString()}; SameSite=None; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
       
+          // Process user data and redirect
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
       
           if (userDoc.exists()) {
@@ -133,38 +147,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               await new Promise(resolve => setTimeout(resolve, 800));
               
               console.log("Redirecting to dashboard from login page");
-              redirectHandled = true;
               window.location.href = `/dashboard?auth=${Date.now()}`;
             }
+
+            // Explicitly redirect to dashboard
+            console.log("Redirecting to dashboard");
+            window.location.href = `/dashboard?auth=${Date.now()}`;
           } else {
             // Handle existing code for users without profiles...
             console.log("User authenticated but no profile found");
           }
         } else if (isPendingAuth === 'true') {
-          console.log("In pending auth state but no user found");
+          console.log("No Firebase user found but pending auth is true");
+      
+          // We'll leave the pending flag because we set up the message listener
+          // It will be cleared when the popup sends a message or after 60 seconds
+      
+          // Set a timeout to clear pending state if no message received (prevent being stuck)
+          setTimeout(() => {
+            if (sessionStorage.getItem('pendingGoogleAuth') === 'true') {
+              console.log("Auth timeout - clearing pending state");
+              sessionStorage.removeItem('pendingGoogleAuth');
           
-          // NEW: Add special case for when we're stuck in a login loop
-          const isBreakingLoop = sessionStorage.getItem('forceBreakRedirectLoop');
-          if (isBreakingLoop === 'true') {
-            console.log("Breaking redirect loop with force flag");
-            sessionStorage.removeItem('forceBreakRedirectLoop');
-            sessionStorage.removeItem('pendingGoogleAuth');
-            
-            // Try to navigate to dashboard again as a last resort
-            redirectHandled = true;
-            window.location.href = `/dashboard?auth=${Date.now()}&force=true`;
-            return;
-          }
-          
-          // Just clear the flag and let the middleware handle it
-          console.log("Clearing pending auth flag, will try again");
-          sessionStorage.removeItem('pendingGoogleAuth');
+              // Reload the page to reset state
+              window.location.reload();
+            }
+          }, 60000);
         }
       } catch (err) {
-        console.error("Error handling redirect result:", err);
+        console.error("Error in handleRedirectResult:", err);
         sessionStorage.removeItem('pendingGoogleAuth');
-        sessionStorage.removeItem('forceBreakRedirectLoop');
-        setError(err instanceof Error ? err.message : 'Authentication error from redirect');
       }
     };
 
@@ -334,95 +346,94 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Modify signInWithGoogle to use persistence
   const signInWithGoogle = async () => {
     try {
       setError(null);
       setIsLoading(true);
-      
-      // NEW: Ensure we're using persistent authentication
+    
+      // Always use persistence
       await setPersistence(auth, browserLocalPersistence);
-      
+    
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({
-        // Force account selection even if only one account is available
         prompt: 'select_account'
       });
     
       console.log("Starting Google sign-in process");
     
-      if (isProductionEnvironment()) {
-        console.log("Using redirect method for production environment");
-      
-        // Set pending auth flag in sessionStorage
-        sessionStorage.setItem('pendingGoogleAuth', 'true');
-        sessionStorage.removeItem('forceBreakRedirectLoop');
-      
-        // FIXED: Always redirect to dashboard after successful Google login
-        const redirectPath = '/dashboard'; // Always redirect to dashboard to avoid loops
-      
-        localStorage.setItem('authRedirectPath', redirectPath);
-        console.log("Storing redirect path:", redirectPath);
-      
-        // Use redirect for production environments (Vercel)
-        await signInWithRedirect(auth, provider);
-        // This won't return - the page will redirect to Google
-        return;
-      } else {
-        console.log("Using popup method for development environment");
-        // Use popup for local development
-        const { user: firebaseUser } = await signInWithPopup(auth, provider);
-        
-        // Set auth token cookie
-        const idToken = await firebaseUser.getIdToken();
-        document.cookie = `token=${idToken}; path=/; SameSite=Strict; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
-        
-        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        
-        if (userDoc.exists()) {
-          const userData = userDoc.data() as UserProfile;
-          
-          // If user exists but was created with password, prevent Google sign-in
-          if (userData.authMethod === 'password') {
-            throw new Error('此帳號已使用密碼註冊。請使用密碼登入。');
-          }
-          
-          setUser({
-            ...userData,
-            emailVerified: firebaseUser.emailVerified
-          });
-        } else {
-          // Check if email is already used with password auth
-          const methods = await fetchSignInMethodsForEmail(auth, firebaseUser.email!);
-          if (methods.includes('password')) {
-            throw new Error('此電子郵件已使用密碼註冊。請使用密碼登入。');
-          }
-          
-          // New user attempting to sign in with Google
-          throw new Error('NEEDS_INVITE_CODE');
-        }
+      // IMPORTANT CHANGE: Use popup for ALL environments
+      console.log("Using popup method for authentication");
+    
+      // Set pending flag
+      sessionStorage.setItem('pendingGoogleAuth', 'true');
+    
+      // Open the popup in a way that works around popup blockers
+      // by connecting it directly to user action
+      const authWindow = window.open('about:blank', 'googleAuthPopup', 
+        'width=500,height=600,top=50,left=50');
+    
+      if (!authWindow) {
+        throw new Error("彈出視窗被阻擋，請允許彈出視窗後再試一次");
       }
-    } catch (err: any) {
+    
+      // Immediately write some content to the popup to keep it alive
+      authWindow.document.write('<html><body><h3 style="font-family: sans-serif; text-align: center; margin-top: 100px;">Google 登入中，請稍候...</h3></body></html>');
+    
+      // Perform auth in this window, then post message back
+      setTimeout(async () => {
+        try {
+          const result = await signInWithPopup(auth, provider);
+          const idToken = await result.user.getIdToken();
+        
+          // Set cookies immediately in this window
+          document.cookie = `token=${idToken}; path=/; SameSite=None; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
+          document.cookie = `emailVerified=${result.user.emailVerified}; path=/; SameSite=None; ${window.location.protocol === 'https:' ? 'Secure;' : ''}`;
+        
+          // Process user data
+          const userDoc = await getDoc(doc(db, 'users', result.user.uid));
+        
+          if (userDoc.exists()) {
+            const userData = userDoc.data() as UserProfile;
+          
+            // Set user state
+            setUser({
+              ...userData,
+              emailVerified: result.user.emailVerified
+            });
+          
+            // Tell the main window we're successful
+            if (window.opener && !window.opener.closed) {
+              window.opener.postMessage({ 
+                type: 'FIREBASE_AUTH_SUCCESS',
+                uid: result.user.uid 
+              }, window.location.origin);
+            
+              // Close this popup
+              authWindow.close();
+            
+              // Redirect main window
+              window.location.href = '/dashboard?auth=' + Date.now();
+            }
+          } else {
+            // Handle new user case
+            throw new Error('NEEDS_INVITE_CODE');
+          }
+        } catch (err) {
+          console.error("Error in popup auth:", err);
+          authWindow.close();
+          sessionStorage.removeItem('pendingGoogleAuth');
+        
+          if (err instanceof Error && err.message === 'NEEDS_INVITE_CODE') {
+            window.location.href = '/signup?google=1';
+          }
+        }
+      }, 500);
+    
+      return;
+    } catch (err) {
       sessionStorage.removeItem('pendingGoogleAuth');
-      // Handle the case where email exists but with different auth method
-      if (err.code === 'auth/account-exists-with-different-credential') {
-        const email = err.customData?.email;
-        if (email) {
-          // Get sign in methods for this email
-          const methods = await fetchSignInMethodsForEmail(auth, email);
-          throw new Error(`此電子郵件已使用${methods.includes('password') ? '密碼' : '其他'}方式註冊。請使用該方式登入。`);
-        }
-      }
-      
-      // Check for specific Firebase error codes
-      if (err.code) {
-        console.error("Google sign-in error code:", err.code);
-        setError(getAuthErrorMessage(err.code));
-      } else {
-        console.error("Google sign-in error:", err);
-        setError(err instanceof Error ? err.message : 'An error occurred during Google sign in');
-      }
-      
+      console.error("Google sign-in error:", err);
+      setError(err instanceof Error ? err.message : 'Authentication error');
       throw err;
     } finally {
       setIsLoading(false);
