@@ -342,6 +342,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const redirectPath = currentPath === '/login' ? '/dashboard' : currentPath;
       
         localStorage.setItem('authRedirectPath', redirectPath);
+        console.log("Storing redirect path:", redirectPath);
       
         // Use redirect for production environments (Vercel)
         await signInWithRedirect(auth, provider);
