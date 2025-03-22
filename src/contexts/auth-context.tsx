@@ -324,19 +324,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // In the signInWithGoogle function, change how you store the redirect path
   const signInWithGoogle = async () => {
     try {
       setError(null);
       setIsLoading(true);
       const provider = new GoogleAuthProvider();
-      
+    
       console.log("Starting Google sign-in process");
-      
+    
       if (isProductionEnvironment()) {
         console.log("Using redirect method for production environment");
-        // Store current path to redirect back after authentication
-        localStorage.setItem('authRedirectPath', window.location.pathname);
-        
+      
+        // FIXED: Always redirect to dashboard after successful Google login
+        // Don't use the current path if it's the login page
+        const currentPath = window.location.pathname;
+        const redirectPath = currentPath === '/login' ? '/dashboard' : currentPath;
+      
+        localStorage.setItem('authRedirectPath', redirectPath);
+      
         // Use redirect for production environments (Vercel)
         await signInWithRedirect(auth, provider);
         // This won't return - the page will redirect to Google
