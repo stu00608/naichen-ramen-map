@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { Search, User } from 'lucide-react';
+import { Search, User, SidebarOpen, SidebarClose } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import Link from 'next/link';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -41,14 +41,75 @@ export default function MapControls({ onSearch, onToggleResults, isResultsOpen }
   };
 
   return (
-    <div className={`
-      absolute z-10 
-      ${isMobile 
-        ? 'top-4 left-4 flex gap-2 items-center' 
-        : 'top-4 left-4 flex gap-2 items-center'}
-    `}>
-      {/* Container for user menu and search (desktop) or just user menu (mobile) */}
-      <div className={`${isMobile ? 'flex gap-2 items-center' : 'flex gap-2 items-center'}`}>
+    <>
+      {/* Left side controls: Sidebar toggle + Search */}
+      <div className={`
+        absolute z-10 
+        ${isMobile 
+          ? 'top-4 left-4 flex gap-2 items-center' 
+          : 'top-4 left-4 flex gap-2 items-center'}
+      `}>
+        {/* Sidebar Toggle Button */}
+        <Button 
+          variant="ghost" 
+          className="rounded-full p-0 h-10 w-10 bg-background/80 backdrop-blur-sm shadow-md"
+          onClick={onToggleResults}
+          aria-label={isResultsOpen ? "關閉側邊欄" : "打開側邊欄"}
+        >
+          {isResultsOpen ? (
+            <SidebarClose className="h-5 w-5 text-foreground" />
+          ) : (
+            <SidebarOpen className="h-5 w-5 text-foreground" />
+          )}
+        </Button>
+
+        {/* Search Bar - mobile view */}
+        {isMobile && (
+          <form onSubmit={handleSearch} className="relative flex-1">
+            <div className="relative">
+              <Input
+                placeholder="搜尋拉麵店或評論..."
+                className="bg-background/80 backdrop-blur-sm shadow-md h-10 w-full border-muted pr-10"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <button 
+                type="button" 
+                className="absolute right-3 top-3 h-4 w-4 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
+                onClick={handleSearch}
+                aria-label="搜尋"
+              >
+                <Search className="h-4 w-4" />
+              </button>
+            </div>
+          </form>
+        )}
+        
+        {/* Search Bar - Only show in desktop view */}
+        {!isMobile && (
+          <form onSubmit={handleSearch} className="relative flex-1">
+            <div className="relative">
+              <Input
+                placeholder="搜尋拉麵店或評論..."
+                className="bg-background/80 backdrop-blur-sm shadow-md h-10 min-w-[240px] md:min-w-[360px] border-muted pr-10"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <button 
+                type="button" 
+                className="absolute right-3 top-3 h-4 w-4 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
+                onClick={handleSearch}
+                aria-label="搜尋"
+              >
+                <Search className="h-4 w-4" />
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+      
+      {/* Right side controls: User menu */}
+      <div className="absolute z-10 top-4 right-4">
         {/* User Menu Button */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -66,7 +127,7 @@ export default function MapControls({ onSearch, onToggleResults, isResultsOpen }
             </Button>
           </DropdownMenuTrigger>
           
-          <DropdownMenuContent align={isMobile ? "center" : "start"} className="w-56">
+          <DropdownMenuContent align={isMobile ? "end" : "end"} className="w-56">
             {isAuthenticated ? (
               <>
                 <DropdownMenuLabel>
@@ -113,49 +174,7 @@ export default function MapControls({ onSearch, onToggleResults, isResultsOpen }
             )}
           </DropdownMenuContent>
         </DropdownMenu>
-        {/* Search Bar - mobile view */}
-        {isMobile && (
-            <form onSubmit={handleSearch} className="relative flex-1">
-            <div className="relative">
-                <Input
-                placeholder="搜尋拉麵店或評論..."
-                className="bg-background/80 backdrop-blur-sm shadow-md h-10 w-full border-muted pr-10"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                <button 
-                type="button" 
-                className="absolute right-3 top-3 h-4 w-4 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
-                onClick={handleSearch}
-                aria-label="搜尋"
-                >
-                <Search className="h-4 w-4" />
-                </button>
-            </div>
-            </form>
-        )}
-        {/* Search Bar - Only show in desktop view */}
-        {!isMobile && (
-          <form onSubmit={handleSearch} className="relative flex-1">
-            <div className="relative">
-              <Input
-                placeholder="搜尋拉麵店或評論..."
-                className="bg-background/80 backdrop-blur-sm shadow-md h-10 min-w-[240px] md:min-w-[320px] border-muted pr-10"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              <button 
-                type="button" 
-                className="absolute right-3 top-3 h-4 w-4 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
-                onClick={handleSearch}
-                aria-label="搜尋"
-              >
-                <Search className="h-4 w-4" />
-              </button>
-            </div>
-          </form>
-        )}
       </div>
-    </div>
+    </>
   );
 }

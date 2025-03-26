@@ -8,6 +8,7 @@ import { Shop } from '@/types';
 import { StarIcon, XIcon, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 interface Review {
   id: string;
@@ -27,7 +28,7 @@ interface SearchResultsProps {
   shopResults: Shop[];
   reviewResults: Review[];
   selectedShop: Shop | null;
-  onSelectShop: (shop: Shop) => void;
+  onSelectShop: (shop: Shop | null) => void;
   searchQuery: string; // Added to show current search query
 }
 
@@ -43,11 +44,27 @@ export default function SearchResults({
   const [activeTab, setActiveTab] = useState<string>("shops");
   const sidebarRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
   
   // If a shop is selected, show reviews for that shop
   const filteredReviews = selectedShop 
     ? reviewResults.filter(review => review.shopId === selectedShop.id)
     : reviewResults;
+  
+  // Check URL parameters for shopId on initial mount and when URL changes
+  useEffect(() => {
+    const shopIdParam = searchParams.get('shopId');
+    
+    // If there's a shopId in the URL but no selected shop (like after a page refresh)
+    if (shopIdParam && !selectedShop) {
+      // Find the shop with this ID
+      const shopFromId = shopResults.find(shop => shop.id === shopIdParam);
+      if (shopFromId) {
+        onSelectShop(shopFromId);
+      }
+    }
+  }, [searchParams, selectedShop, shopResults, onSelectShop]);
     
   // Prevent body scrolling when sidebar is open
   useEffect(() => {
@@ -68,12 +85,37 @@ export default function SearchResults({
 
   // Handle back button click - clear selected shop
   const handleBackToResults = () => {
-    onSelectShop(null as any);
+    onSelectShop(null);
+    
+    // Remove shopId from URL
+    const params = new URLSearchParams();
+    searchParams.forEach((value, key) => {
+      if (key !== 'shopId') {
+        params.append(key, value);
+      }
+    });
+    
+    const newUrl = pathname + (params.toString() ? `?${params.toString()}` : '');
+    window.history.pushState({}, '', newUrl);
+  };
+  
+  // Handle opening a shop from search results
+  const handleShopSelect = (shop: Shop) => {
+    onSelectShop(shop);
+    
+    if (shop && shop.id) {
+      // Update URL with shopId
+      const params = new URLSearchParams();
+      searchParams.forEach((value, key) => {
+        params.append(key, value);
+      });
+      params.set('shopId', shop.id);
+      
+      const newUrl = pathname + `?${params.toString()}`;
+      window.history.pushState({}, '', newUrl);
+    }
   };
 
-  // Determine the sidebar height for mobile
-  const mobileMaxHeight = isMobile ? 'h-2/3' : '';
-  
   // Determine the proper sidebar positioning classes based on mobile or desktop view
   const sidebarPositionClasses = isMobile
     ? 'top-0 left-0 right-0 w-full max-h-2/3'
@@ -95,19 +137,8 @@ export default function SearchResults({
         borderBottom: isMobile ? '1px solid var(--border)' : 'none'
       }}
     >
-      <div className="flex items-center justify-end p-4 border-b border-border">
+      <div className="flex items-center justify-end p-4 border-b border-border h-18">
         {/* Don't put components here, I mean to leave space for searchbox */}
-        {/* <h2 className="text-lg font-semibold text-foreground">
-          {selectedShop ? selectedShop.name : (searchQuery ? `"${searchQuery}" 的搜尋結果` : '搜尋結果')}
-        </h2> */}
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={onClose} 
-          className="text-muted-foreground hover:text-foreground hover:bg-accent/50"
-        >
-          <XIcon className="h-4 w-4" />
-        </Button>
       </div>
       
       <div className={`${isMobile ? 'max-h-[calc(66vh-65px)]' : 'h-[calc(100vh-65px)]'} overflow-hidden`}>
@@ -190,7 +221,7 @@ export default function SearchResults({
                       <Card 
                         key={shop.id} 
                         className="mb-3 hover:bg-accent/5 cursor-pointer bg-card border-border"
-                        onClick={() => onSelectShop(shop)}
+                        onClick={() => handleShopSelect(shop)}
                       >
                         <CardContent className="p-3">
                           <h3 className="font-medium text-card-foreground">{shop.name}</h3>

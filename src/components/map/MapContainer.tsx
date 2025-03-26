@@ -19,6 +19,38 @@ import { Button } from '@/components/ui/button';
 // Define sidebar width for desktop view
 const SIDEBAR_WIDTH = 450;
 
+// Helper function to adjust map center coordinates for sidebar
+const adjustCenterForSidebar = (
+  longitude: number, 
+  latitude: number, 
+  isResultsOpen: boolean,
+  isMobile: boolean,
+  windowWidth: number,
+  zoom: number
+): [number, number] => {
+  // Only apply offset on desktop and when sidebar is open
+  if (isResultsOpen && !isMobile) {
+    // Calculate what percentage of the viewport width is occupied by the sidebar
+    const sidebarWidthPercent = SIDEBAR_WIDTH / windowWidth;
+    
+    // The longitude offset needs to account for:
+    // 1. The percentage of screen taken by sidebar
+    // 2. The current zoom level (higher zoom = smaller world area visible)
+    // 3. The map's mercator projection (longitude changes aren't linear)
+    
+    // Calculate offset based on zoom level (exponential relationship)
+    // At higher zoom levels, a smaller longitude difference covers more pixels
+    const zoomFactor = Math.pow(2, zoom) / 512;
+    
+    // Calculate the longitude offset
+    // This formula approximates the relationship between screen pixels and longitude at the given zoom level
+    const lngOffset = (sidebarWidthPercent / 2) / zoomFactor;
+    
+    return [longitude + lngOffset, latitude];
+  }
+  return [longitude, latitude];
+};
+
 interface Review {
   id: string;
   title: string;
@@ -92,10 +124,11 @@ const MapContainer = () => {
     getInitialLocation();
   }, []);
 
-  // 獲取店家資料
+  // 獲取店家資料 - just focus on fetching data
   useEffect(() => {
     const fetchShops = async () => {
       try {
+        console.log("Fetching shops data...");
         const q = query(collection(db, 'shops'));
         const querySnapshot = await getDocs(q);
         
@@ -104,6 +137,7 @@ const MapContainer = () => {
           shopsData.push({ id: doc.id, ...doc.data() } as Shop);
         });
         
+        console.log(`Loaded ${shopsData.length} shops`);
         setShops(shopsData);
       } catch (error) {
         console.error("Error fetching shops:", error);
@@ -114,6 +148,62 @@ const MapContainer = () => {
 
     fetchShops();
   }, []);
+  
+  // Process URL shop ID in a separate effect that runs after shops are loaded into state
+  useEffect(() => {
+    if (shops.length > 0 && mapRef.current && !loading && !initialLocationLoading) {
+      try {
+        // Get shopId from URL parameters
+        console.log("Checking for shopId in URL after shops loaded...");
+        const urlParams = new URLSearchParams(window.location.search);
+        const shopIdParam = urlParams.get('shopId') || '';
+        console.log(`ShopId from URL: ${shopIdParam || "none"}, available shops: ${shops.length}`);
+        
+        if (shopIdParam && !selectedShop) {
+          // Find the shop with matching ID
+          const shop = shops.find(s => s.id === shopIdParam);
+          console.log("Found shop for ID:", shop ? shop.name : "none");
+          
+          if (shop) {
+            console.log("Selecting shop:", shop.name);
+            // Select the shop directly here
+            setSelectedShop(shop);
+            
+            // Open the sidebar if it's closed
+            setIsResultsOpen(true);
+            
+            // Update URL with the shopID
+            // const url = new URL(window.location.href);
+            // url.searchParams.set('shopId', shop.id);
+            // window.history.pushState({}, '', url.toString());
+            
+            // Queue a fly-to operation after render
+            setTimeout(() => {
+              if (mapRef.current && mapRef.current.flyTo) {
+                // Always adjust for the sidebar since we know it will be open
+                const [adjustedLng, adjustedLat] = adjustCenterForSidebar(
+                  shop.location.longitude,
+                  shop.location.latitude,
+                  true, // sidebar will be open
+                  isMobile,
+                  windowWidth,
+                  16 // zoom level for single shop view
+                );
+                
+                mapRef.current.flyTo({
+                  center: [adjustedLng, adjustedLat],
+                  zoom: 16, // Higher zoom level for single shop view
+                  duration: 1000
+                });
+              }
+            }, 500); // Add a small delay to ensure map and DOM are ready
+          }
+        }
+      } catch (error) {
+        console.error("Error handling URL shop ID:", error);
+      }
+    }
+  }, [shops, loading, initialLocationLoading, selectedShop, mapRef, isMobile, windowWidth]);
 
   // 獲取評論資料
   useEffect(() => {
@@ -175,6 +265,96 @@ const MapContainer = () => {
       { query, shops, reviews, timestamp: now }
     ]);
   };
+
+  // Simplified fitMapToShops function that centers the map on selected shops
+  const fitMapToShops = (shopsToShow: Shop[], toggleSidebar = true) => {
+    if (!shopsToShow.length) return;
+
+    // If toggleSidebar is true and sidebar is closed, open it
+    if (toggleSidebar && !isResultsOpen) {
+      setIsResultsOpen(true);
+    }
+
+    // Calculate the center point of all shops
+    const sumLat = shopsToShow.reduce((sum, shop) => sum + shop.location.latitude, 0);
+    const sumLng = shopsToShow.reduce((sum, shop) => sum + shop.location.longitude, 0);
+    const centerLat = sumLat / shopsToShow.length;
+    const centerLng = sumLng / shopsToShow.length;
+
+    // Calculate appropriate zoom level based on the number of shops
+    let zoom = shopsToShow.length === 1 ? 15 : 13;
+
+    // Update viewport state
+    setViewport({
+      latitude: centerLat,
+      longitude: centerLng,
+      zoom: zoom
+    });
+
+    // Use smooth transition with flyTo
+    if (mapRef.current && mapRef.current.flyTo) {
+      // Adjust center coordinates for sidebar if it's open
+      const [adjustedLng, adjustedLat] = adjustCenterForSidebar(
+        centerLng, 
+        centerLat, 
+        isResultsOpen, 
+        isMobile,
+        windowWidth,
+        viewport.zoom // Get current zoom from viewport
+      );
+      
+      mapRef.current.flyTo({
+        center: [adjustedLng, adjustedLat],
+        zoom: zoom,
+        duration: 1200
+      });
+    }
+  };
+
+  // 處理店家選擇
+  const handleSelectShop = (shop: Shop | null) => {
+    setSelectedShop(shop);
+    
+    if (!shop) return;
+    
+    // If sidebar is closed, open it
+    if (!isResultsOpen) {
+      setIsResultsOpen(true);
+    }
+    
+    // Update URL with the shopID (enabling browser back/forward navigation)
+    if (shop && shop.id) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('shopId', shop.id);
+      window.history.pushState({}, '', url.toString());
+    } else {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('shopId');
+      window.history.pushState({}, '', url.toString());
+    }
+    
+    // Use requestAnimationFrame to ensure DOM has updated before map animation
+    requestAnimationFrame(() => {
+      if (mapRef.current && mapRef.current.flyTo) {
+        // Adjust center coordinates for sidebar
+        const [adjustedLng, adjustedLat] = adjustCenterForSidebar(
+          shop.location.longitude,
+          shop.location.latitude,
+          true, // Always use true here since we know sidebar will be open
+          isMobile,
+          windowWidth,
+          16 // Using the zoom level we'll set for this view
+        );
+        
+        mapRef.current.flyTo({
+          center: [adjustedLng, adjustedLat],
+          zoom: 16, // Higher zoom level for single shop view
+          duration: 1000
+        });
+      }
+    });
+  };
+  
 
   // 搜尋功能
   const handleSearch = (query: string) => {
@@ -241,71 +421,48 @@ const MapContainer = () => {
     }
   };
 
-  // Simplified fitMapToShops function that centers the map on selected shops
-  const fitMapToShops = (shopsToShow: Shop[], toggleSidebar = true) => {
-    if (!shopsToShow.length) return;
-
-    // If toggleSidebar is true and sidebar is closed, open it
-    if (toggleSidebar && !isResultsOpen) {
-      setIsResultsOpen(true);
-    }
-
-    // Calculate the center point of all shops
-    const sumLat = shopsToShow.reduce((sum, shop) => sum + shop.location.latitude, 0);
-    const sumLng = shopsToShow.reduce((sum, shop) => sum + shop.location.longitude, 0);
-    const centerLat = sumLat / shopsToShow.length;
-    const centerLng = sumLng / shopsToShow.length;
-
-    // Calculate appropriate zoom level based on the number of shops
-    let zoom = shopsToShow.length === 1 ? 15 : 13;
-
-    // Update viewport state
-    setViewport({
-      latitude: centerLat,
-      longitude: centerLng,
-      zoom: zoom
-    });
-
-    // Use smooth transition with flyTo
-    if (mapRef.current && mapRef.current.flyTo) {
-      mapRef.current.flyTo({
-        center: [centerLng, centerLat],
-        zoom: zoom,
-        duration: 1200
-      });
-    }
-  };
-
-  // 處理店家選擇
-  const handleSelectShop = (shop: Shop | null) => {
-    setSelectedShop(shop);
-    
-    if (!shop) return;
-    
-    if (mapRef.current && mapRef.current.flyTo) {
-      mapRef.current.flyTo({
-        center: [shop.location.longitude, shop.location.latitude],
-        zoom: 16, // Higher zoom level for single shop view
-        duration: 1000
-      });
-    }
-  };
-
-  // 處理搜尋結果視窗的切換
+  // 處理搜尋結果視窗的切換 - 做成非同步操作避免使用setTimeout
   const toggleResults = () => {
+    // 先取得反轉的狀態
     const newIsOpen = !isResultsOpen;
+    
+    // Update state
     setIsResultsOpen(newIsOpen);
     
-    // 如果側邊欄狀態改變且有選中的店家或搜尋結果，重新調整地圖視圖
-    if (selectedShop) {
-      // 短暫延遲以等待側邊欄開關動畫
-      setTimeout(() => {
-        handleSelectShop(selectedShop);
-      }, 50);
-    } else if (searchResults.shops.length > 0) {
-      setTimeout(() => {
-        fitMapToShops(searchResults.shops, false);
-      }, 50);
+    // 如果側邊欄現在是打開的，且有選中的店家或搜尋結果，重新調整地圖視圖
+    if (newIsOpen) {
+      // 使用 requestAnimationFrame 進行非同步操作，等待瀏覽器渲染完成側邊欄再調整地圖
+      requestAnimationFrame(() => {
+        if (selectedShop) {
+          // 直接調用，不需要setTimeout
+          if (mapRef.current && mapRef.current.flyTo) {
+            // Adjust center coordinates for sidebar
+            const [adjustedLng, adjustedLat] = adjustCenterForSidebar(
+              selectedShop.location.longitude,
+              selectedShop.location.latitude,
+              true, // We know sidebar is open here since newIsOpen is true
+              isMobile,
+              windowWidth,
+              16 // Using the zoom level we'll set for this view
+            );
+            
+            mapRef.current.flyTo({
+              center: [adjustedLng, adjustedLat],
+              zoom: 16,
+              duration: 1000
+            });
+          }
+        } else if (searchResults.shops.length > 0) {
+          fitMapToShops(searchResults.shops, false);
+        }
+      });
+    }
+    
+    // 如果側邊欄關閉，且有URL參數，清除URL參數
+    if (!newIsOpen && window.location.search.includes('shopId')) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('shopId');
+      window.history.pushState({}, '', url.toString());
     }
   };
 
@@ -360,7 +517,7 @@ const MapContainer = () => {
                 key={shop.id}
                 latitude={shop.location.latitude}
                 longitude={shop.location.longitude}
-                color={getMarkerColor(80)} // Default color instead of using rating
+                color={"#F44336"} // Default color instead of using rating
                 onClick={(e) => {
                   e.originalEvent.stopPropagation();
                   handleSelectShop(shop);
@@ -383,7 +540,16 @@ const MapContainer = () => {
                   <Button 
                     variant="ghost" 
                     size="icon" 
-                    onClick={() => setSelectedShop(null)} 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Only close the popup, don't affect the sidebar
+                      setSelectedShop(null);
+                      
+                      // Remove shopId parameter from URL
+                      const url = new URL(window.location.href);
+                      url.searchParams.delete('shopId');
+                      window.history.pushState({}, '', url.toString());
+                    }} 
                     className="absolute top-1 right-1 h-6 w-6 rounded-full bg-background/80 hover:bg-background text-muted-foreground hover:text-foreground p-1 z-10"
                   >
                     <XIcon className="h-4 w-4" />
@@ -408,7 +574,7 @@ const MapContainer = () => {
             )}
           </Map>
           
-          {/* Map Controls - Avatar Menu and Search Bar */}
+          {/* Map Controls - Collapse button and Search Bar */}
           <MapControls 
             onSearch={handleSearch} 
             onToggleResults={toggleResults}
