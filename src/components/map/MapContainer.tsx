@@ -84,6 +84,10 @@ const MapContainer = () => {
   const [isResultsOpen, setIsResultsOpen] = useState(false);
   const mapRef = useRef<any>(null);
   const isMobile = useIsMobile();
+  
+  // Add state to track whether we need to process URL param and if map is ready
+  const [shopIdFromUrl, setShopIdFromUrl] = useState<string | null>(null);
+  const [isMapReady, setIsMapReady] = useState(false);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -94,6 +98,11 @@ const MapContainer = () => {
   
   // Search cache for storing previous searches
   const [searchCache, setSearchCache] = useState<SearchCache[]>([]);
+
+  // Handle map load event
+  const handleMapLoad = useCallback(() => {
+    setIsMapReady(true);
+  }, []);
 
   // Handle window resize
   useEffect(() => {
@@ -124,6 +133,17 @@ const MapContainer = () => {
     getInitialLocation();
   }, []);
 
+  // Extract shopId from URL on initial load
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const shopIdParam = urlParams.get('shopId');
+      if (shopIdParam) {
+        setShopIdFromUrl(shopIdParam);
+      }
+    }
+  }, []);
+
   // 獲取店家資料 - just focus on fetching data
   useEffect(() => {
     const fetchShops = async () => {
@@ -149,61 +169,55 @@ const MapContainer = () => {
     fetchShops();
   }, []);
   
-  // Process URL shop ID in a separate effect that runs after shops are loaded into state
+  // Process URL shop ID when all necessary conditions are met
   useEffect(() => {
-    if (shops.length > 0 && mapRef.current && !loading && !initialLocationLoading) {
+    // Only process when shops are loaded, map is ready, and we have a shopId to process
+    if (shops.length > 0 && isMapReady && shopIdFromUrl && !selectedShop && !loading && !initialLocationLoading) {
       try {
-        // Get shopId from URL parameters
-        console.log("Checking for shopId in URL after shops loaded...");
-        const urlParams = new URLSearchParams(window.location.search);
-        const shopIdParam = urlParams.get('shopId') || '';
-        console.log(`ShopId from URL: ${shopIdParam || "none"}, available shops: ${shops.length}`);
+        console.log(`Processing shopId from URL: ${shopIdFromUrl}`);
         
-        if (shopIdParam && !selectedShop) {
-          // Find the shop with matching ID
-          const shop = shops.find(s => s.id === shopIdParam);
-          console.log("Found shop for ID:", shop ? shop.name : "none");
+        // Find the shop with matching ID
+        const shop = shops.find(s => s.id === shopIdFromUrl);
+        console.log("Found shop for ID:", shop ? shop.name : "none");
+        
+        if (shop) {
+          console.log("Selecting shop:", shop.name);
+          // Select the shop directly here
+          setSelectedShop(shop);
           
-          if (shop) {
-            console.log("Selecting shop:", shop.name);
-            // Select the shop directly here
-            setSelectedShop(shop);
-            
-            // Open the sidebar if it's closed
-            setIsResultsOpen(true);
-            
-            // Update URL with the shopID
-            // const url = new URL(window.location.href);
-            // url.searchParams.set('shopId', shop.id);
-            // window.history.pushState({}, '', url.toString());
-            
-            // Queue a fly-to operation after render
-            setTimeout(() => {
-              if (mapRef.current && mapRef.current.flyTo) {
-                // Always adjust for the sidebar since we know it will be open
-                const [adjustedLng, adjustedLat] = adjustCenterForSidebar(
-                  shop.location.longitude,
-                  shop.location.latitude,
-                  true, // sidebar will be open
-                  isMobile,
-                  windowWidth,
-                  16 // zoom level for single shop view
-                );
-                
-                mapRef.current.flyTo({
-                  center: [adjustedLng, adjustedLat],
-                  zoom: 16, // Higher zoom level for single shop view
-                  duration: 1000
-                });
-              }
-            }, 500); // Add a small delay to ensure map and DOM are ready
-          }
+          // Open the sidebar if it's closed
+          setIsResultsOpen(true);
+          
+          // Use requestAnimationFrame for the flyTo operation
+          requestAnimationFrame(() => {
+            if (mapRef.current && mapRef.current.flyTo) {
+              // Always adjust for the sidebar since we know it will be open
+              const [adjustedLng, adjustedLat] = adjustCenterForSidebar(
+                shop.location.longitude,
+                shop.location.latitude,
+                true, // sidebar will be open
+                isMobile,
+                windowWidth,
+                16 // zoom level for single shop view
+              );
+              
+              mapRef.current.flyTo({
+                center: [adjustedLng, adjustedLat],
+                zoom: 16, // Higher zoom level for single shop view
+                duration: 1000
+              });
+              
+              // Clear the URL param after processing
+              setShopIdFromUrl(null);
+            }
+          });
         }
       } catch (error) {
         console.error("Error handling URL shop ID:", error);
+        setShopIdFromUrl(null); // Clear on error
       }
     }
-  }, [shops, loading, initialLocationLoading, selectedShop, mapRef, isMobile, windowWidth]);
+  }, [shops, loading, initialLocationLoading, isMapReady, shopIdFromUrl, selectedShop, isMobile, windowWidth]);
 
   // 獲取評論資料
   useEffect(() => {
@@ -502,6 +516,7 @@ const MapContainer = () => {
             mapboxAccessToken={process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN}
             initialViewState={viewport}
             onMove={handleMapMove}
+            onLoad={handleMapLoad}
             style={getMapContainerStyle()}
             mapStyle={mapStyle}
             attributionControl={false}
@@ -533,10 +548,11 @@ const MapContainer = () => {
                 closeOnClick={false}
                 onClose={() => setSelectedShop(null)}
                 anchor="bottom"
-                className="rounded-md shadow-lg z-10 p-0 overflow-hidden"
+                className="rounded-xl overflow-hidden shadow-lg z-10 p-0 max-w-[250px]"
                 closeButton={false}
+                offset={[0, -5]}
               >
-                <div className="relative">
+                <div className="relative border-0">
                   <Button 
                     variant="ghost" 
                     size="icon" 
@@ -550,21 +566,21 @@ const MapContainer = () => {
                       url.searchParams.delete('shopId');
                       window.history.pushState({}, '', url.toString());
                     }} 
-                    className="absolute top-1 right-1 h-6 w-6 rounded-full bg-background/80 hover:bg-background text-muted-foreground hover:text-foreground p-1 z-10"
+                    className="absolute top-0.5 right-0.5 h-5 w-5 rounded-full bg-background/30 hover:bg-background/50 text-muted-foreground hover:text-foreground p-0.5 z-10"
                   >
-                    <XIcon className="h-4 w-4" />
+                    <XIcon className="h-3 w-3" />
                   </Button>
                   
-                  <div className="p-3 bg-card text-card-foreground">
-                    <h3 className="font-bold">{selectedShop.name}</h3>
-                    <p className="text-sm text-muted-foreground">{selectedShop.address}</p>
+                  <div className="p-2 bg-sidebar border-0 text-sidebar-foreground">
+                    <h3 className="font-bold text-sm leading-tight">{selectedShop.name}</h3>
+                    <p className="text-xs text-sidebar-foreground/80 mt-0.5 leading-tight">{selectedShop.address}</p>
                     <div className="flex flex-wrap gap-1 mt-1">
                       {selectedShop.shop_types.map((type, idx) => (
-                        <span key={idx} className="text-xs bg-accent text-accent-foreground px-1.5 py-0.5 rounded-full">
+                        <span key={idx} className="text-[10px] bg-sidebar-accent/80 text-sidebar-accent-foreground px-1.5 py-0.5 rounded-full">
                           {type}
                         </span>
                       ))}
-                      <span className="text-xs bg-accent text-accent-foreground px-1.5 py-0.5 rounded-full">
+                      <span className="text-[10px] bg-sidebar-accent/80 text-sidebar-accent-foreground px-1.5 py-0.5 rounded-full">
                         {selectedShop.region}
                       </span>
                     </div>
