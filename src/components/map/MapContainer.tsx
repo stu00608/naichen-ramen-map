@@ -521,7 +521,7 @@ const MapContainer = () => {
             mapStyle={mapStyle}
             attributionControl={false}
           >
-            <NavigationControl position="top-right" />
+            <NavigationControl position="bottom-right" style={{ margin: '1.25rem' }} showCompass={false} visualizePitch={false}/>
             
             {/* 顯示用戶位置 */}
             <UserLocationMarker onLocationUpdate={handleLocationUpdate} />
