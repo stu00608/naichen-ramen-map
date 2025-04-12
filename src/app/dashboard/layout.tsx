@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
+import { Map } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 import { AppSidebar } from "@/components/app-sidebar"
 import {
@@ -138,6 +139,14 @@ export default function DashboardLayout({
                 ))}
               </BreadcrumbList>
             </Breadcrumb>
+          </div>
+          <div className="ml-auto flex items-center px-4">
+            <Link 
+              href="/"
+              className="-ml-1 inline-flex h-9 w-9 items-center justify-center rounded-md text-foreground"
+            >
+              <Map/>
+            </Link>
           </div>
         </header>
         <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
