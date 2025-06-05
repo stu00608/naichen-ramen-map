@@ -68,6 +68,7 @@ import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 import { db } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
 import type { Review } from "@/types";
+import type { ShopData } from "@/hooks/forms/useReviewFormUtils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
 import { Timestamp } from "firebase/firestore";
@@ -100,6 +101,49 @@ interface LegacyReviewData extends Omit<Review, "side_menu" | "ramen_items"> {
 	shop_google_maps_uri?: string;
 	wait_time?: string;
 	ramen_items?: never; // Explicitly mark as never to avoid confusion
+}
+
+// IG Post Content Generator
+function generateIgPostContent(review: any, shop?: ShopData): string {
+	// Helper: 全角to半角
+	const toHalfWidth = (str: string) => str.replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+	// Helper: remove whitespace
+	const removeWhitespace = (str: string) => str.replace(/\s+/g, "");
+	// Title from notes
+	let title = "";
+	if (review.notes) {
+		const firstLine = review.notes.split("\n")[0];
+		if (firstLine.startsWith("#")) title = firstLine;
+	}
+	// Shop name hashtag
+	const shopTag = review.shop_name ? `#${toHalfWidth(removeWhitespace(review.shop_name))}` : "";
+	// 拉麵品項
+	const ramenLine = review.ramen_items && review.ramen_items.length > 0 ?
+		`拉麵🍜：${review.ramen_items.map((item: any) => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}` : "";
+	// 配菜
+	const sideLine = review.side_menu && review.side_menu.length > 0 ?
+		`配菜🍥：${review.side_menu.map((item: any) => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}` : "";
+	// 客製
+	const prefLine = review.ramen_items && review.ramen_items.some((item: any) => item.preference) ?
+		`客製🆓：${review.ramen_items.filter((item: any) => item.preference).map((item: any) => item.preference).join(", ")}` : "";
+	// Notes (skip first line if it's a title)
+	let notesBlock = review.notes || "";
+	if (title && notesBlock.startsWith(title)) {
+		notesBlock = notesBlock.split("\n").slice(1).join("\n");
+	}
+	// Address
+	const address = shop?.address || "";
+	// Date/time
+	const visitDate = review.visit_date?.toDate ? review.visit_date.toDate() : review.visit_date;
+	const dateStr = visitDate ? `${visitDate.getFullYear()}.${(visitDate.getMonth()+1).toString().padStart(2,"0")}.${visitDate.getDate().toString().padStart(2,"0")}` : "";
+	const timeStr = visitDate ? `${visitDate.getHours().toString().padStart(2,"0")}:${visitDate.getMinutes().toString().padStart(2,"0")}` : "";
+	// 人數/預約
+	const people = review.people_count || "";
+	const reservationType = review.reservation_type === "no_line" ? "無排隊" : review.reservation_type === "lined_up" ? "有排隊" : review.reservation_type;
+	// Tags
+	const tags = review.tags && review.tags.length > 0 ? review.tags.map((t: string) => t.startsWith("#") ? t : `#${t}`).join(" ") : "";
+	// Compose
+	return `${title ? `${title}\n` : ""}${shopTag}\n📍駅徒歩分\n\n${ramenLine ? ramenLine + "\n" : ""}${sideLine ? sideLine + "\n" : ""}點餐💁：食券機・(現金、キャッシュレス)\n${prefLine ? prefLine + "\n" : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n🗾：${address}\n🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #日本拉麵 #日本美食 #日本旅遊\n${tags}\n #ラーメン #ラーメン好き #奶辰吃拉麵`;
 }
 
 export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
@@ -164,6 +208,7 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 				},
 			],
 			side_menu: [],
+			tags: [],
 			soup_score: 0,
 			noodle_score: 0,
 			topping_score: 0,
@@ -245,16 +290,19 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 				}
 
 				// Convert legacy format to new format if needed
-				const ramenItems: RamenItem[] = data.ramen_item
-					? [
-							{
-								name: data.ramen_item,
-								price: data.price || 0,
-								currency: getDefaultCurrency(data.shop_country || "JP"),
-								preference: data.preference || "",
-							},
-						]
-					: [];
+				const ramenItems: RamenItem[] =
+					Array.isArray(data.ramen_items) && (data.ramen_items as any[]).length > 0
+						? (data.ramen_items as RamenItem[])
+						: data.ramen_item
+							? [
+									{
+										name: data.ramen_item,
+										price: data.price || 0,
+										currency: getDefaultCurrency(data.shop_country || "JP"),
+										preference: data.preference || "",
+									},
+								]
+							: [];
 
 				const sideMenuItems: SideMenuItem[] =
 					data.side_menu?.map((item) => ({
@@ -276,6 +324,7 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 					reservation_type: data.reservation_type,
 					ramen_items: ramenItems,
 					side_menu: sideMenuItems,
+					tags: (data as any).tags || [],
 					wait_time: data.wait_time || "",
 					soup_score: data.soup_score,
 					noodle_score: data.noodle_score,
@@ -467,15 +516,18 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 	const onSubmit = async (data: ReviewFormData) => {
 		try {
 			const formattedData = formatFormDataForSubmission(data);
-
-			// Add update timestamp
+			// Fetch shop data for IG post
+			const shopData = formattedData.shop_id ? await fetchShopData(formattedData.shop_id) : undefined;
+			const shop = shopData || undefined;
+			// Generate IG post content
+			const igContent = generateIgPostContent({ ...formattedData, visit_date: data.visit_date }, shop);
+			// Add update timestamp and ig_post_data
 			const submitData = {
 				...formattedData,
 				updated_at: Timestamp.now(),
+				ig_post_data: { content: igContent }
 			};
-
 			const result = await updateDocument(reviewId, submitData);
-
 			if (result) {
 				toast.success("評價已成功更新！");
 				router.push("/dashboard/reviews");
@@ -588,6 +640,7 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 				},
 			],
 			side_menu: [],
+			tags: [],
 			soup_score: 0,
 			noodle_score: 0,
 			topping_score: 0,

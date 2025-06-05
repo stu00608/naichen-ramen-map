@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { z } from "zod";
 
 // Define Shop data interface
-interface ShopData {
+export interface ShopData {
 	id: string;
 	name: string;
 	country: string;
