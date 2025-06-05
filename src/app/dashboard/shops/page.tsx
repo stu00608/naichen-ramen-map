@@ -201,12 +201,12 @@ export default function ShopsPage() {
 		}
 	};
 
-	const fetchShops = async (searchTerm = "") => {
+	const fetchShops = async (searchTerm = "", page = 1) => {
 		try {
 			setLoading(true);
 			const baseQuery = collection(db, "shops");
 
-			// Create query based on search term
+			// Calculate offset for pagination
 			let q;
 			if (searchTerm) {
 				const searchLower = searchTerm.toLowerCase();
@@ -242,7 +242,7 @@ export default function ShopsPage() {
 			}
 			setTotalShops(total);
 
-			// Get paginated results
+			// Get paginated results (for now, always first page)
 			const querySnapshot = await getDocs(q);
 			if (!querySnapshot.empty) {
 				const shopsData: Shop[] = [];
@@ -255,13 +255,13 @@ export default function ShopsPage() {
 				setFirstVisible(querySnapshot.docs[0]);
 				// Store the last document of the first page
 				setPageSnapshots([querySnapshot.docs[querySnapshot.docs.length - 1]]);
-				setCurrentPage(1);
+				// Do NOT setCurrentPage(1) here
 			} else {
 				setShops([]);
 				setLastVisible(null);
 				setFirstVisible(null);
 				setPageSnapshots([]);
-				setCurrentPage(1);
+				// Do NOT setCurrentPage(1) here
 			}
 		} catch (error) {
 			console.error("Error fetching shops:", error);
@@ -367,10 +367,10 @@ export default function ShopsPage() {
 		}
 	};
 
-	// Fetch shops when search term or page changes
+	// Update useEffect to depend on debouncedSearchTerm and currentPage
 	useEffect(() => {
-		fetchShops(debouncedSearchTerm);
-	}, [debouncedSearchTerm, fetchShops]);
+		fetchShops(debouncedSearchTerm, currentPage);
+	}, [debouncedSearchTerm, currentPage]);
 
 	const clearSearch = () => {
 		setSearchTerm("");
