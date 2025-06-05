@@ -140,9 +140,23 @@ export function generateIgPostContent(review: ReviewFormData & {
 	const timeStr = visitDate ? `${visitDate.getHours().toString().padStart(2,"0")}:${visitDate.getMinutes().toString().padStart(2,"0")}` : "";
 	// 人數/預約
 	const people = review.people_count || "";
-	const reservationType = review.reservation_type === "no_line" ? "無排隊" : review.reservation_type === "lined_up" ? "有排隊" : review.reservation_type;
+	const reservationType = review.reservation_type === "no_line" ? "無排隊" : review.reservation_type === "lined_up" ? "排隊" : review.reservation_type;
 	// Tags
 	const tags = review.tags && review.tags.length > 0 ? review.tags.map((t: string) => t.startsWith("#") ? t : `#${t}`).join(" ") : "";
+
+	// Add conditional tag based on overall score
+	let scoreTag = "";
+	if (review.overall_score > 3.5 && review.overall_score <= 4.0) {
+		scoreTag = "#好吃";
+	} else if (review.overall_score > 4.0 && review.overall_score <= 4.5) {
+		scoreTag = "#很好吃";
+	} else if (review.overall_score > 4.5 && review.overall_score <= 5.0) {
+		scoreTag = "#超好吃";
+	}
+
+	// Combine existing tags and score tag
+	const finalTags = tags ? `${tags} ${scoreTag}`.trim() : scoreTag;
+
 	// Compose
-	return `${title ? `${title}\n` : ""}${shopTag}\n${stationLine ? stationLine + '\n' : ''}\n${ramenLine ? ramenLine + "\n" : ""}${sideLine ? sideLine + "\n" : ""}${orderLine ? orderLine + "\n" : ""}${prefLine ? prefLine + "\n" : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n${address ? `🗾：${address}\n` : ''}🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #日本拉麵 #日本美食 #日本旅遊\n${tags}\n #ラーメン #ラーメン好き #奶辰吃拉麵`;
+	return `${title ? `${title}\n` : ""}${shopTag}\n${stationLine ? stationLine + '\n' : ''}\n${ramenLine ? ramenLine + "\n" : ""}${sideLine ? sideLine + "\n" : ""}${orderLine ? orderLine + "\n" : ""}${prefLine ? prefLine + "\n" : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n${address ? `🗾：${address}\n` : ''}🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #ラーメン #ラーメン好き #奶辰吃拉麵 #日本拉麵 #日本美食 #日本旅遊 ${finalTags}`;
 }
