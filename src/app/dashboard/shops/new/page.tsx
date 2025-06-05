@@ -56,6 +56,8 @@ interface DaySchedule {
 	isClosed: boolean;
 }
 
+type StationError = string | { message?: string; stage?: string; googleStatus?: string; error?: any };
+
 export default function NewShopPage() {
 	const { addDocument, loading, error, checkDocumentExists } =
 		useFirestore("shops");
@@ -86,6 +88,15 @@ export default function NewShopPage() {
 	const searchParams = useNextSearchParams();
 	const returnTo = searchParams.get("returnTo");
 	const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+	const [nearestStation, setNearestStation] = useState<null | {
+		name: string;
+		distance_meters: number;
+		walking_time_minutes: number;
+		walking_time_text: string;
+		distance_text: string;
+	}>(null);
+	const [stationLoading, setStationLoading] = useState(false);
+	const [stationError, setStationError] = useState<StationError | null>(null);
 
 	const {
 		control,
@@ -376,7 +387,43 @@ export default function NewShopPage() {
 		googleMapsUriRef.current = place.googleMapsUri || null;
 		setShowPlacesResults(false);
 		setSearchResults([]);
-		setSearchQuery(""); // Clear the search query after selection
+		setSearchQuery("");
+
+		// --- Nearest Station Logic ---
+		setNearestStation(null);
+		setStationError(null);
+		if (place.location?.latitude && place.location?.longitude) {
+			setStationLoading(true);
+			try {
+				const res = await fetch("/api/places/nearest-station", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						latitude: place.location.latitude,
+						longitude: place.location.longitude,
+						country: countryValue,
+					}),
+				});
+				if (!res.ok) {
+					const errData = await res.json();
+					console.log("Nearest station API error:", errData);
+					setStationError(errData);
+					return;
+				}
+				const data = await res.json();
+				setNearestStation({
+					name: data.station.name,
+					distance_meters: data.distance_meters,
+					walking_time_minutes: data.walking_time_minutes,
+					walking_time_text: data.walking_time_text,
+					distance_text: data.distance_text,
+				});
+			} catch (err: any) {
+				setStationError({ message: err.message || "找不到最近車站", stage: "fetch-catch" });
+			} finally {
+				setStationLoading(false);
+			}
+		}
 	};
 
 	// Function to handle place unlink/removing selection
@@ -585,6 +632,42 @@ export default function NewShopPage() {
 										shop={selectedPlace}
 										onUnlink={handlePlaceUnlink}
 									/>
+									{/* Nearest Station UI */}
+									<div className="mt-4">
+										{stationLoading && (
+											<div className="flex items-center gap-2 text-muted-foreground animate-pulse">
+												<span className="w-4 h-4 rounded-full bg-primary/20 inline-block" />
+												最近車站資訊載入中...
+											</div>
+										)}
+										{stationError && !nearestStation && (
+											<div className="text-destructive text-sm mt-1">
+												{typeof stationError === 'string' ? stationError : stationError.message}
+												{typeof stationError === 'object' && stationError.stage && (
+													<span className="ml-2">[stage: {stationError.stage}]</span>
+												)}
+												{typeof stationError === 'object' && stationError.googleStatus && (
+													<span className="ml-2">[google: {stationError.googleStatus}]</span>
+												)}
+												{typeof stationError === 'object' && stationError.error && (
+													<span className="ml-2">[error: {JSON.stringify(stationError.error)}]</span>
+												)}
+											</div>
+										)}
+										{nearestStation && !stationLoading && !stationError && (
+											<div className="rounded-lg border bg-card p-3 flex flex-col gap-1 shadow-sm">
+												<div className="flex items-center gap-2">
+													<span className="font-semibold text-base">🚉 最近車站</span>
+													<span className="text-primary font-medium">{nearestStation.name}</span>
+												</div>
+												<div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+													<span>步行 {nearestStation.walking_time_text} ({nearestStation.walking_time_minutes} 分)</span>
+													<span>距離 {nearestStation.distance_text} ({nearestStation.distance_meters} 公尺)</span>
+												</div>
+											</div>
+										)}
+									</div>
+									{/* End Nearest Station UI */}
 									{errors.name && (
 										<p className="mt-2 text-sm text-destructive">
 											{errors.name.message}
