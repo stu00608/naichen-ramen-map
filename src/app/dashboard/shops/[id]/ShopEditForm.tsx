@@ -731,7 +731,7 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 													))}
 												</div>
 												{/* Show selected station info in modern style */}
-												<div className="mt-2 p-2 rounded border bg-muted">
+												<div className="mt-2 p-2 rounded border bg-muted-foreground/10">
 													<div className="font-semibold">已選擇：{nearestStations[selectedStationIdx]?.name}</div>
 													<div className="text-sm text-muted-foreground">
 													  步行 {nearestStations[selectedStationIdx]?.walking_time_text} ({nearestStations[selectedStationIdx]?.walking_time_minutes} 分)・
