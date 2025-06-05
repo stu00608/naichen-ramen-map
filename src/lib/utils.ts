@@ -140,7 +140,14 @@ export function generateIgPostContent(review: ReviewFormData & {
 	const timeStr = visitDate ? `${visitDate.getHours().toString().padStart(2,"0")}:${visitDate.getMinutes().toString().padStart(2,"0")}` : "";
 	// 人數/預約
 	const people = review.people_count || "";
-	const reservationType = review.reservation_type === "no_line" ? "無排隊" : review.reservation_type === "lined_up" ? "排隊" : review.reservation_type;
+
+	let reservationType = review.reservation_type === "no_line" ? "無排隊" : review.reservation_type === "lined_up" ? "有排隊" : review.reservation_type;
+
+	// Append wait_time if reservationType is "有排隊"
+	if (review.reservation_type === "lined_up" && review.wait_time) {
+		reservationType = `排隊${review.wait_time}分鐘`;
+	}
+
 	// Tags
 	const tags = review.tags && review.tags.length > 0 ? review.tags.map((t: string) => t.startsWith("#") ? t : `#${t}`).join(" ") : "";
 
