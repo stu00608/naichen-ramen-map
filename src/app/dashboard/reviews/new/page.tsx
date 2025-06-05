@@ -73,6 +73,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { generateIgPostContent } from "@/lib/utils";
+import { StationError } from "@/types";
 
 export default function NewReviewPage() {
 	const router = useRouter();
@@ -102,6 +104,10 @@ export default function NewReviewPage() {
 		address?: string;
 		googleMapsUri?: string;
 	} | null>(null);
+	const [nearestStations, setNearestStations] = useState<any[]>([]);
+	const [selectedStationIdx, setSelectedStationIdx] = useState<number>(0);
+	const [stationLoading, setStationLoading] = useState(false);
+	const [stationError, setStationError] = useState<StationError | null>(null);
 	const [showWaitTime, setShowWaitTime] = useState(false);
 	const [defaultCurrency, setDefaultCurrency] = useState("JPY");
 	const [isSearching, setIsSearching] = useState(false);
@@ -281,6 +287,38 @@ export default function NewReviewPage() {
 				setValue("shop_id", shopData.id);
 				setValue("shop_name", shopData.name);
 
+				// Fetch nearest station info when a shop is selected
+				if (shopData.location?.latitude && shopData.location?.longitude) {
+					setStationLoading(true);
+					setNearestStations([]);
+					setSelectedStationIdx(0);
+					setStationError(null);
+					try {
+						const res = await fetch("/api/places/nearest-station", {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({
+								latitude: shopData.location.latitude,
+								longitude: shopData.location.longitude,
+								country: shopData.country,
+							}),
+						});
+						if (!res.ok) {
+							const errData = await res.json();
+							console.log("Nearest station API error:", errData);
+							setStationError(errData);
+						} else {
+							const data = await res.json();
+							setNearestStations(data.stations || []);
+							setSelectedStationIdx(0);
+						}
+					} catch (err: any) {
+						setStationError({ message: err.message || "找不到最近車站", stage: "fetch-catch" });
+					} finally {
+						setStationLoading(false);
+					}
+				}
+
 				// Set default currency based on shop country
 				const currency = getDefaultCurrency(shopData.country);
 				setDefaultCurrency(currency);
@@ -355,17 +393,38 @@ export default function NewReviewPage() {
 	// Handle form submission
 	const onSubmit = async (data: ReviewFormData) => {
 		try {
-			const formattedData = formatFormDataForSubmission(data);
+			// Include selected nearest station data in submission
+			const selectedStation = nearestStations[selectedStationIdx];
+			const submitData = {
+				...data,
+				nearest_station_name: selectedStation?.name,
+				nearest_station_walking_time_minutes: selectedStation?.walking_time_minutes,
+				nearest_station_distance_meters: selectedStation?.distance_meters,
+			};
 
-			const result = await addDocument(formattedData);
+			// Fetch shop data for IG post
+			const shopDataForIG = submitData.shop_id ? await fetchShopData(submitData.shop_id) : undefined;
+			const shopForIG = shopDataForIG || undefined;
 
-			if (result) {
-				toast.success("評價已成功儲存！");
+			// Generate IG post content
+			const igContent = generateIgPostContent(submitData, shopForIG);
+
+			// Add create timestamp and ig_post_data
+			const finalSubmitData = {
+				...submitData,
+				created_at: new Date(), // Use new Date() for new document
+				updated_at: new Date(), // Use new Date() for new document
+				ig_post_data: { content: igContent },
+			};
+
+			const docRef = await addDocument(finalSubmitData);
+			if (docRef) {
+				toast.success("評價已成功建立！");
 				router.push("/dashboard/reviews");
 			}
 		} catch (error) {
-			console.error("Error submitting review:", error);
-			toast.error("儲存評價時發生錯誤");
+			console.error("Error creating review:", error);
+			toast.error("建立評價時發生錯誤");
 		}
 	};
 
@@ -394,9 +453,9 @@ export default function NewReviewPage() {
 		if (isDirty) {
 			setConfirmationTarget("clear");
 			setCancelDialogOpen(true);
-			return;
+		} else {
+			clearFormData();
 		}
-		clearFormData();
 	};
 
 	// Add helper function to clear form data
@@ -1101,6 +1160,59 @@ export default function NewReviewPage() {
 								</FormItem>
 							)}
 						/>
+					</div>
+
+					{/* Nearest Station UI */}
+					<div className="col-span-4 space-y-2">
+						<Label>最近車站 (步行20分鐘內)</Label>
+						{stationLoading && (
+							<div className="flex items-center gap-2 text-muted-foreground animate-pulse">
+								<span className="w-4 h-4 rounded-full bg-primary/20 inline-block" />
+								最近車站資訊載入中...
+							</div>
+						)}
+						{stationError && nearestStations.length === 0 && (
+							<div className="text-destructive text-sm mt-1">
+								{typeof stationError === 'string' ? stationError : stationError.message}
+								{typeof stationError === 'object' && stationError.stage && (
+									<span className="ml-2">[stage: {stationError.stage}]</span>
+								)}
+								{typeof stationError === 'object' && stationError.googleStatus && (
+									<span className="ml-2">[google: {stationError.googleStatus}]</span>
+								)}
+								{typeof stationError === 'object' && stationError.error && (
+									<span className="ml-2">[error: {JSON.stringify(stationError.error)}]</span>
+								)}
+							</div>
+						)}
+						{nearestStations.length > 0 && !stationLoading && !stationError && (
+							<div className="rounded-lg border bg-card p-3 flex flex-col gap-2 shadow-sm">
+								<div className="font-semibold text-base mb-1">選擇最近車站</div>
+								<div className="flex flex-col gap-1">
+									{nearestStations.map((station, idx) => (
+										<label key={idx} className="flex items-center gap-2 cursor-pointer">
+											<input
+												type="radio"
+												name="nearestStation"
+												checked={selectedStationIdx === idx}
+												onChange={() => setSelectedStationIdx(idx)}
+												className="accent-primary"
+											/>
+											<span className="font-medium text-primary">{station.name}</span>
+											<span className="text-xs text-muted-foreground">步行 {station.walking_time_text} ({station.walking_time_minutes} 分)・{station.distance_text} ({station.distance_meters} 公尺)</span>
+										</label>
+									))}
+								</div>
+								{/* Show selected station info in modern style */}
+								<div className="mt-2 p-2 rounded border bg-muted">
+									<div className="font-semibold">已選擇：{nearestStations[selectedStationIdx]?.name}</div>
+									<div className="text-sm text-muted-foreground">
+										步行 {nearestStations[selectedStationIdx]?.walking_time_text} ({nearestStations[selectedStationIdx]?.walking_time_minutes} 分)・
+										距離 {nearestStations[selectedStationIdx]?.distance_text} ({nearestStations[selectedStationIdx]?.distance_meters} 公尺)
+									</div>
+								</div>
+							</div>
+						)}
 					</div>
 
 					{/* Your Review Section */}

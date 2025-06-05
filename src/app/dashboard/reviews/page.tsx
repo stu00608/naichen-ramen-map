@@ -115,51 +115,9 @@ interface Review {
 	tags?: string[];
 	order_method?: string;
 	payment_method?: string[];
-}
-
-// IG Post Content Generator
-function generateIgPostContent(review: Review, shop?: Shop): string {
-	// Helper: 全角to半角
-	const toHalfWidth = (str: string) => str.replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
-	// Helper: remove whitespace
-	const removeWhitespace = (str: string) => str.replace(/\s+/g, "");
-	// Title from notes
-	let title = "";
-	if (review.notes) {
-		const firstLine = review.notes.split("\n")[0];
-		if (firstLine.startsWith("#")) title = firstLine;
-	}
-	// Shop name hashtag
-	const shopTag = review.shop_name ? `#${toHalfWidth(removeWhitespace(review.shop_name))}` : "";
-	// 拉麵品項
-	const ramenLine = review.ramen_items && review.ramen_items.length > 0 ?
-		`拉麵🍜：${review.ramen_items.map(item => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}` : "";
-	// 配菜
-	const sideLine = review.side_menu && review.side_menu.length > 0 ?
-		`配菜🍥：${review.side_menu.map(item => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}` : "";
-	// 點餐/付款
-	const orderLine = review.order_method ? `點餐💁：${review.order_method}${review.payment_method && review.payment_method.length > 0 ? `・(${review.payment_method.join("、")})` : ""}` : "";
-	// 客製
-	const prefLine = review.ramen_items && review.ramen_items.some(item => item.preference) ?
-		`客製🆓：${review.ramen_items.filter(item => item.preference).map(item => item.preference).join(", ")}` : "";
-	// Notes (skip first line if it's a title)
-	let notesBlock = review.notes || "";
-	if (title && notesBlock.startsWith(title)) {
-		notesBlock = notesBlock.split("\n").slice(1).join("\n");
-	}
-	// Address
-	const address = shop?.address || "";
-	// Date/time
-	const visitDate = review.visit_date?.toDate ? review.visit_date.toDate() : undefined;
-	const dateStr = visitDate ? `${visitDate.getFullYear()}.${(visitDate.getMonth()+1).toString().padStart(2,"0")}.${visitDate.getDate().toString().padStart(2,"0")}` : "";
-	const timeStr = visitDate ? `${visitDate.getHours().toString().padStart(2,"0")}:${visitDate.getMinutes().toString().padStart(2,"0")}` : "";
-	// 人數/預約
-	const people = review.people_count || "";
-	const reservationType = review.reservation_type === "no_line" ? "無排隊" : review.reservation_type === "lined_up" ? "有排隊" : review.reservation_type;
-	// Tags
-	const tags = review.tags && review.tags.length > 0 ? review.tags.map(t => t.startsWith("#") ? t : `#${t}`).join(" ") : "";
-	// Compose
-	return `${title ? `${title}\n` : ""}${shopTag}\n📍駅徒歩分\n\n${ramenLine ? ramenLine + "\n" : ""}${sideLine ? sideLine + "\n" : ""}${orderLine ? orderLine + "\n" : ""}${prefLine ? prefLine + "\n" : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n🗾：${address}\n🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #日本拉麵 #日本美食 #日本旅遊\n${tags}\n #ラーメン #ラーメン好き #奶辰吃拉麵`;
+	nearest_station_name?: string;
+	nearest_station_walking_time_minutes?: number;
+	nearest_station_distance_meters?: number;
 }
 
 export default function ReviewsPage() {
@@ -189,7 +147,6 @@ export default function ReviewsPage() {
 		[key: string]: Record<string, unknown>;
 	}>({});
 	const { getDocument } = useFirestore("shops");
-	const [igUpdatingId, setIgUpdatingId] = useState<string | null>(null);
 
 	// Add debounced search
 	useEffect(() => {
@@ -689,34 +646,13 @@ export default function ReviewsPage() {
 												variant="ghost"
 												className="text-pink-500 hover:text-pink-600"
 												title="複製 IG 內容"
-												disabled={igUpdatingId === review.id}
 												onClick={async () => {
-													if (igUpdatingId) return;
 													let igContent = review.ig_post_data?.content;
-													if (!igContent) {
-														setIgUpdatingId(review.id);
-														try {
-															const shop = shopData[review.shop_id] as unknown as Shop | undefined;
-															igContent = generateIgPostContent(review, shop);
-															// Save to Firestore
-															const success = await updateDocument(review.id, { ig_post_data: { content: igContent } });
-															if (success) {
-																toast.success("IG 內容已生成並儲存");
-																// Optionally update local state for instant UI update
-																setReviews((prev) => prev.map(r => r.id === review.id ? { ...r, ig_post_data: { content: igContent || "" } } : r));
-															} else {
-																toast.error("儲存 IG 內容失敗");
-																setIgUpdatingId(null);
-																return;
-															}
-														} catch (err) {
-															toast.error("儲存 IG 內容失敗");
-															setIgUpdatingId(null);
-															return;
-														}
-														setIgUpdatingId(null);
+													if (igContent) {
+														await copyToClipboard(igContent);
+													} else {
+														toast.error("沒有可複製的 IG 內容");
 													}
-													await copyToClipboard(igContent!);
 												}}
 											>
 												<Instagram className="h-4 w-4" />

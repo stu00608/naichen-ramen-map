@@ -76,6 +76,10 @@ export interface Review {
 	source?: string;
 	order_method: "食券機" | "注文制";
 	payment_method: Array<"現金" | "QR決済" | "交通系IC" | "クレジットカード">;
+	tags: string[];
+	nearest_station_name?: string;
+	nearest_station_walking_time_minutes?: number;
+	nearest_station_distance_meters?: number;
 }
 
 // 標籤類型
@@ -100,4 +104,12 @@ export interface Image {
 	height: number;
 	size: number;
 	created_at: Timestamp;
+}
+
+// Nearest Station Error Type
+export interface StationError {
+	message: string;
+	stage?: string;
+	googleStatus?: string;
+	error?: any;
 }
