@@ -62,6 +62,14 @@ hosting/.cache
 /firebase-*.zip
 /.firebase/
 /emulator-ui/
+service-account.json
 
 # Any file that marked as .old
 **.old
+
+# Explicitly ignore these files even if they were previously tracked
+/.env.local
+/tsconfig.tsbuildinfo
+/service-account.json
+
+firestore.rules
