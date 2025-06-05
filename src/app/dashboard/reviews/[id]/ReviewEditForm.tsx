@@ -88,6 +88,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { generateIgPostContent } from "@/lib/utils";
+import { StationError } from "@/types";
 
 interface ReviewEditFormProps {
 	reviewId: string;
@@ -103,52 +105,6 @@ interface LegacyReviewData extends Omit<Review, "side_menu" | "ramen_items"> {
 	shop_google_maps_uri?: string;
 	wait_time?: string;
 	ramen_items?: never; // Explicitly mark as never to avoid confusion
-}
-
-// IG Post Content Generator
-function generateIgPostContent(review: any, shop?: ShopData): string {
-	// Helper: 全角to半角
-	const toHalfWidth = (str: string) => str.replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
-	// Helper: remove whitespace
-	const removeWhitespace = (str: string) => str.replace(/\s+/g, "");
-	// Title from notes
-	let title = "";
-	if (review.notes) {
-		const firstLine = review.notes.split("\n")[0];
-		// remove the `#` and do strip, and make remain string as title
-		if (firstLine.startsWith("#")) title = firstLine.slice(1).trim();
-	}
-	// Shop name hashtag
-	const shopTag = review.shop_name ? `#${toHalfWidth(removeWhitespace(review.shop_name))}` : "";
-	// 拉麵品項
-	const ramenLine = review.ramen_items && review.ramen_items.length > 0 ?
-		`拉麵🍜：${review.ramen_items.map((item: any) => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}` : "";
-	// 配菜
-	const sideLine = review.side_menu && review.side_menu.length > 0 ?
-		`配菜🍥：${review.side_menu.map((item: any) => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}` : "";
-	// 點餐/付款
-	const orderLine = review.order_method ? `點餐💁：${review.order_method}${review.payment_method && review.payment_method.length > 0 ? `・(${review.payment_method.join("、")})` : ""}` : "";
-	// 客製
-	const prefLine = review.ramen_items && review.ramen_items.some((item: any) => item.preference) ?
-		`客製🆓：${review.ramen_items.filter((item: any) => item.preference).map((item: any) => item.preference).join(", ")}` : "";
-	// Notes (skip first line if it's a title)
-	let notesBlock = review.notes || "";
-	if (title && notesBlock.startsWith(title)) {
-		notesBlock = notesBlock.split("\n").slice(1).join("\n");
-	}
-	// Address
-	const address = shop?.address || "";
-	// Date/time
-	const visitDate = review.visit_date?.toDate ? review.visit_date.toDate() : review.visit_date;
-	const dateStr = visitDate ? `${visitDate.getFullYear()}.${(visitDate.getMonth()+1).toString().padStart(2,"0")}.${visitDate.getDate().toString().padStart(2,"0")}` : "";
-	const timeStr = visitDate ? `${visitDate.getHours().toString().padStart(2,"0")}:${visitDate.getMinutes().toString().padStart(2,"0")}` : "";
-	// 人數/預約
-	const people = review.people_count || "";
-	const reservationType = review.reservation_type === "no_line" ? "無排隊" : review.reservation_type === "lined_up" ? "有排隊" : review.reservation_type;
-	// Tags
-	const tags = review.tags && review.tags.length > 0 ? review.tags.map((t: string) => t.startsWith("#") ? t : `#${t}`).join(" ") : "";
-	// Compose
-	return `${title ? `${title}\n` : ""}${shopTag}\n📍駅徒歩分\n\n${ramenLine ? ramenLine + "\n" : ""}${sideLine ? sideLine + "\n" : ""}${orderLine ? orderLine + "\n" : ""}${prefLine ? prefLine + "\n" : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n🗾：${address}\n🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #日本拉麵 #日本美食 #日本旅遊\n${tags}\n #ラーメン #ラーメン好き #奶辰吃拉麵`;
 }
 
 export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
@@ -179,6 +135,10 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 		address?: string;
 		googleMapsUri?: string;
 	} | null>(null);
+	const [nearestStations, setNearestStations] = useState<any[]>([]);
+	const [selectedStationIdx, setSelectedStationIdx] = useState<number>(0);
+	const [stationLoading, setStationLoading] = useState(false);
+	const [stationError, setStationError] = useState<StationError | null>(null);
 	const [showWaitTime, setShowWaitTime] = useState(false);
 	const [defaultCurrency, setDefaultCurrency] = useState("JPY");
 	const [isSearching, setIsSearching] = useState(false);
@@ -450,6 +410,38 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 				setValue("shop_id", shopData.id);
 				setValue("shop_name", shopData.name);
 
+				// Fetch nearest station info when a shop is selected
+				if (shopData.location?.latitude && shopData.location?.longitude) {
+					setStationLoading(true);
+					setNearestStations([]);
+					setSelectedStationIdx(0);
+					setStationError(null);
+					try {
+						const res = await fetch("/api/places/nearest-station", {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({
+								latitude: shopData.location.latitude,
+								longitude: shopData.location.longitude,
+								country: shopData.country,
+							}),
+						});
+						if (!res.ok) {
+							const errData = await res.json();
+							console.log("Nearest station API error:", errData);
+							setStationError(errData);
+						} else {
+							const data = await res.json();
+							setNearestStations(data.stations || []);
+							setSelectedStationIdx(0);
+						}
+					} catch (err: any) {
+						setStationError({ message: err.message || "找不到最近車站", stage: "fetch-catch" });
+					} finally {
+						setStationLoading(false);
+					}
+				}
+
 				// Set default currency based on shop country
 				const currency = getDefaultCurrency(shopData.country);
 				setDefaultCurrency(currency);
@@ -524,19 +516,30 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 	// Handle form submission
 	const onSubmit = async (data: ReviewFormData) => {
 		try {
-			const formattedData = formatFormDataForSubmission(data);
-			// Fetch shop data for IG post
-			const shopData = formattedData.shop_id ? await fetchShopData(formattedData.shop_id) : undefined;
-			const shop = shopData || undefined;
-			// Generate IG post content
-			const igContent = generateIgPostContent({ ...formattedData, visit_date: data.visit_date }, shop);
-			// Add update timestamp and ig_post_data
+			// Include selected nearest station data in submission
+			const selectedStation = nearestStations[selectedStationIdx];
 			const submitData = {
-				...formattedData,
+				...data,
 				updated_at: Timestamp.now(),
+				nearest_station_name: selectedStation?.name,
+				nearest_station_walking_time_minutes: selectedStation?.walking_time_minutes,
+				nearest_station_distance_meters: selectedStation?.distance_meters,
+			};
+
+			// Fetch shop data for IG post
+			const shopDataForIG = submitData.shop_id ? await fetchShopData(submitData.shop_id) : undefined;
+			const shopForIG = shopDataForIG || undefined;
+
+			// Generate IG post content
+			const igContent = generateIgPostContent(submitData, shopForIG);
+
+			// Add update timestamp and ig_post_data
+			const finalSubmitData = {
+				...submitData,
 				ig_post_data: { content: igContent }
 			};
-			const result = await updateDocument(reviewId, submitData);
+
+			const result = await updateDocument(reviewId, finalSubmitData);
 			if (result) {
 				toast.success("評價已成功更新！");
 				router.push("/dashboard/reviews");
@@ -1340,6 +1343,60 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 							)}
 						/>
 					</div>
+
+					{/* Nearest Station UI */}
+					<div className="col-span-4 space-y-2">
+						<Label>最近車站 (步行20分鐘內)</Label>
+						{stationLoading && (
+							<div className="flex items-center gap-2 text-muted-foreground animate-pulse">
+								<span className="w-4 h-4 rounded-full bg-primary/20 inline-block" />
+								最近車站資訊載入中...
+							</div>
+						)}
+						{stationError && nearestStations.length === 0 && (
+							<div className="text-destructive text-sm mt-1">
+								{typeof stationError === 'string' ? stationError : stationError.message}
+								{typeof stationError === 'object' && stationError.stage && (
+									<span className="ml-2">[stage: {stationError.stage}]</span>
+								)}
+								{typeof stationError === 'object' && stationError.googleStatus && (
+									<span className="ml-2">[google: {stationError.googleStatus}]</span>
+								)}
+								{typeof stationError === 'object' && stationError.error && (
+									<span className="ml-2">[error: {JSON.stringify(stationError.error)}]</span>
+								)}
+							</div>
+						)}
+						{nearestStations.length > 0 && !stationLoading && !stationError && (
+							<div className="rounded-lg border bg-card p-3 flex flex-col gap-2 shadow-sm">
+								<div className="font-semibold text-base mb-1">選擇最近車站</div>
+								<div className="flex flex-col gap-1">
+									{nearestStations.map((station, idx) => (
+										<label key={idx} className="flex items-center gap-2 cursor-pointer">
+											<input
+												type="radio"
+												name="nearestStation"
+												checked={selectedStationIdx === idx}
+												onChange={() => setSelectedStationIdx(idx)}
+												className="accent-primary"
+											/>
+											<span className="font-medium text-primary">{station.name}</span>
+											<span className="text-xs text-muted-foreground">步行 {station.walking_time_text} ({station.walking_time_minutes} 分)・{station.distance_text} ({station.distance_meters} 公尺)</span>
+										</label>
+									))}
+								</div>
+								{/* Show selected station info in modern style */}
+								<div className="mt-2 p-2 rounded border bg-muted">
+									<div className="font-semibold">已選擇：{nearestStations[selectedStationIdx]?.name}</div>
+									<div className="text-sm text-muted-foreground">
+										步行 {nearestStations[selectedStationIdx]?.walking_time_text} ({nearestStations[selectedStationIdx]?.walking_time_minutes} 分)・
+										距離 {nearestStations[selectedStationIdx]?.distance_text} ({nearestStations[selectedStationIdx]?.distance_meters} 公尺)
+									</div>
+								</div>
+							</div>
+						)}
+					</div>
+					{/* End Nearest Station UI */}
 
 					{/* Your Review Section */}
 					<h2 className="text-xl font-semibold mb-5">您的評價</h2>

@@ -115,10 +115,20 @@ interface Review {
 	tags?: string[];
 	order_method?: string;
 	payment_method?: string[];
+	nearest_station_name?: string;
+	nearest_station_walking_time_minutes?: number;
+	nearest_station_distance_meters?: number;
 }
 
 // IG Post Content Generator
-function generateIgPostContent(review: Review, shop?: Shop): string {
+function generateIgPostContent(
+	review: Review & {
+		nearest_station_name?: string;
+		nearest_station_walking_time_minutes?: number;
+		nearest_station_distance_meters?: number;
+	},
+	shop?: Shop
+): string {
 	// Helper: 全角to半角
 	const toHalfWidth = (str: string) => str.replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
 	// Helper: remove whitespace
@@ -158,8 +168,17 @@ function generateIgPostContent(review: Review, shop?: Shop): string {
 	const reservationType = review.reservation_type === "no_line" ? "無排隊" : review.reservation_type === "lined_up" ? "有排隊" : review.reservation_type;
 	// Tags
 	const tags = review.tags && review.tags.length > 0 ? review.tags.map(t => t.startsWith("#") ? t : `#${t}`).join(" ") : "";
+	// Nearest station info
+	let stationLine = "";
+	if (
+		review.nearest_station_name &&
+		typeof review.nearest_station_walking_time_minutes === 'number' &&
+		typeof review.nearest_station_distance_meters === 'number'
+	) {
+		stationLine = `📍${review.nearest_station_name}徒歩${review.nearest_station_walking_time_minutes}分（${review.nearest_station_distance_meters}m）`;
+	}
 	// Compose
-	return `${title ? `${title}\n` : ""}${shopTag}\n📍駅徒歩分\n\n${ramenLine ? ramenLine + "\n" : ""}${sideLine ? sideLine + "\n" : ""}${orderLine ? orderLine + "\n" : ""}${prefLine ? prefLine + "\n" : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n🗾：${address}\n🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #日本拉麵 #日本美食 #日本旅遊\n${tags}\n #ラーメン #ラーメン好き #奶辰吃拉麵`;
+	return `${title ? `${title}\n` : ""}${shopTag}\n${stationLine ? stationLine + "\n" : ""}\n${ramenLine ? ramenLine + "\n" : ""}${sideLine ? sideLine + "\n" : ""}${orderLine ? orderLine + "\n" : ""}${prefLine ? prefLine + "\n" : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n🗾：${address}\n🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #日本拉麵 #日本美食 #日本旅遊\n${tags}\n #ラーメン #ラーメン好き #奶辰吃拉麵`;
 }
 
 export default function ReviewsPage() {

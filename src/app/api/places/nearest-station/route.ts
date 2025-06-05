@@ -48,9 +48,9 @@ export async function POST(request: Request) {
           name: station.name,
           location: stationLocation,
           distance_meters: leg.distance.value,
+          distance_text: leg.distance.text,
           walking_time_minutes: walkingTimeMinutes,
           walking_time_text: leg.duration.text,
-          distance_text: leg.distance.text,
         });
       }
       if (stationInfos.length >= 3) break;
