@@ -54,6 +54,8 @@ import {
 	MAX_RAMEN_ITEMS,
 	MAX_SIDE_MENU_ITEMS,
 	RESERVATION_TYPES,
+	ORDER_METHOD_OPTIONS,
+	PAYMENT_METHOD_OPTIONS,
 } from "@/constants";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -113,7 +115,8 @@ function generateIgPostContent(review: any, shop?: ShopData): string {
 	let title = "";
 	if (review.notes) {
 		const firstLine = review.notes.split("\n")[0];
-		if (firstLine.startsWith("#")) title = firstLine;
+		// remove the `#` and do strip, and make remain string as title
+		if (firstLine.startsWith("#")) title = firstLine.slice(1).trim();
 	}
 	// Shop name hashtag
 	const shopTag = review.shop_name ? `#${toHalfWidth(removeWhitespace(review.shop_name))}` : "";
@@ -123,6 +126,8 @@ function generateIgPostContent(review: any, shop?: ShopData): string {
 	// 配菜
 	const sideLine = review.side_menu && review.side_menu.length > 0 ?
 		`配菜🍥：${review.side_menu.map((item: any) => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}` : "";
+	// 點餐/付款
+	const orderLine = review.order_method ? `點餐💁：${review.order_method}${review.payment_method && review.payment_method.length > 0 ? `・(${review.payment_method.join("、")})` : ""}` : "";
 	// 客製
 	const prefLine = review.ramen_items && review.ramen_items.some((item: any) => item.preference) ?
 		`客製🆓：${review.ramen_items.filter((item: any) => item.preference).map((item: any) => item.preference).join(", ")}` : "";
@@ -143,7 +148,7 @@ function generateIgPostContent(review: any, shop?: ShopData): string {
 	// Tags
 	const tags = review.tags && review.tags.length > 0 ? review.tags.map((t: string) => t.startsWith("#") ? t : `#${t}`).join(" ") : "";
 	// Compose
-	return `${title ? `${title}\n` : ""}${shopTag}\n📍駅徒歩分\n\n${ramenLine ? ramenLine + "\n" : ""}${sideLine ? sideLine + "\n" : ""}點餐💁：食券機・(現金、キャッシュレス)\n${prefLine ? prefLine + "\n" : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n🗾：${address}\n🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #日本拉麵 #日本美食 #日本旅遊\n${tags}\n #ラーメン #ラーメン好き #奶辰吃拉麵`;
+	return `${title ? `${title}\n` : ""}${shopTag}\n📍駅徒歩分\n\n${ramenLine ? ramenLine + "\n" : ""}${sideLine ? sideLine + "\n" : ""}${orderLine ? orderLine + "\n" : ""}${prefLine ? prefLine + "\n" : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n🗾：${address}\n🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #日本拉麵 #日本美食 #日本旅遊\n${tags}\n #ラーメン #ラーメン好き #奶辰吃拉麵`;
 }
 
 export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
@@ -218,6 +223,8 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 			overall_score: 0,
 			notes: "",
 			images: [],
+			order_method: ORDER_METHOD_OPTIONS[0],
+			payment_method: [],
 		},
 	});
 
@@ -335,6 +342,8 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 					overall_score: data.overall_score,
 					notes: data.notes || "",
 					images: data.images || [],
+					order_method: (data as any).order_method || ORDER_METHOD_OPTIONS[0],
+					payment_method: (data as any).payment_method || [],
 				};
 
 				reset(formData);
@@ -650,6 +659,8 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 			overall_score: 0,
 			notes: "",
 			images: [],
+			order_method: ORDER_METHOD_OPTIONS[0],
+			payment_method: [],
 		});
 
 		// Clear selected shop
@@ -990,6 +1001,53 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 										/>
 									</div>
 								)}
+
+								{/* Order Method */}
+								<div className="col-span-1 space-y-2">
+									<FormField
+										control={control}
+										name="order_method"
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>點餐方式</FormLabel>
+												<Select onValueChange={field.onChange} value={field.value}>
+													<FormControl>
+														<SelectTrigger className="w-full h-10">
+															<SelectValue placeholder="選擇點餐方式" />
+														</SelectTrigger>
+													</FormControl>
+													<SelectContent>
+														{ORDER_METHOD_OPTIONS.map((option) => (
+															<SelectItem key={option} value={option}>{option}</SelectItem>
+														))}
+													</SelectContent>
+												</Select>
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+								</div>
+
+								{/* Payment Method */}
+								<div className="col-span-2 space-y-2">
+									<FormField
+										control={control}
+										name="payment_method"
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>付款方式</FormLabel>
+												<MultipleSelector
+													value={field.value.map((v: string) => ({ value: v, label: v }))}
+													onChange={(selected) => field.onChange(selected.map((s: any) => s.value))}
+													options={PAYMENT_METHOD_OPTIONS.map((option) => ({ value: option, label: option }))}
+													placeholder="選擇付款方式"
+													className="w-full"
+												/>
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+								</div>
 							</div>
 						</CardContent>
 					</Card>

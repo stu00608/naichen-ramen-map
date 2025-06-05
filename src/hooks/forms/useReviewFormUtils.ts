@@ -70,6 +70,8 @@ export const reviewSchema = z.object({
 	overall_score: z.number().min(0).max(5),
 	notes: z.string().optional(),
 	images: z.array(z.string()).optional(),
+	order_method: z.enum(["食券機", "注文制"]),
+	payment_method: z.array(z.enum(["現金", "QR決済", "交通系IC", "クレジットカード"])),
 });
 
 export type ReviewFormData = z.infer<typeof reviewSchema>;
@@ -249,6 +251,8 @@ export function useReviewFormUtils() {
 			overall_score: overall,
 			notes: data.notes || "",
 			images: data.images || [],
+			order_method: data.order_method,
+			payment_method: data.payment_method,
 			created_at: Timestamp.now(),
 			updated_at: Timestamp.now(),
 			searchTokens: searchTokens,

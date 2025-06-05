@@ -113,6 +113,8 @@ interface Review {
 	source?: string;
 	ig_post_data?: { content: string };
 	tags?: string[];
+	order_method?: string;
+	payment_method?: string[];
 }
 
 // IG Post Content Generator
@@ -135,6 +137,8 @@ function generateIgPostContent(review: Review, shop?: Shop): string {
 	// 配菜
 	const sideLine = review.side_menu && review.side_menu.length > 0 ?
 		`配菜🍥：${review.side_menu.map(item => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}` : "";
+	// 點餐/付款
+	const orderLine = review.order_method ? `點餐💁：${review.order_method}${review.payment_method && review.payment_method.length > 0 ? `・(${review.payment_method.join("、")})` : ""}` : "";
 	// 客製
 	const prefLine = review.ramen_items && review.ramen_items.some(item => item.preference) ?
 		`客製🆓：${review.ramen_items.filter(item => item.preference).map(item => item.preference).join(", ")}` : "";
@@ -155,7 +159,7 @@ function generateIgPostContent(review: Review, shop?: Shop): string {
 	// Tags
 	const tags = review.tags && review.tags.length > 0 ? review.tags.map(t => t.startsWith("#") ? t : `#${t}`).join(" ") : "";
 	// Compose
-	return `${title ? `${title}\n` : ""}${shopTag}\n📍駅徒歩分\n\n${ramenLine ? ramenLine + "\n" : ""}${sideLine ? sideLine + "\n" : ""}點餐💁：食券機・(現金、キャッシュレス)\n${prefLine ? prefLine + "\n" : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n🗾：${address}\n🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #日本拉麵 #日本美食 #日本旅遊\n${tags}\n #ラーメン #ラーメン好き #奶辰吃拉麵`;
+	return `${title ? `${title}\n` : ""}${shopTag}\n📍駅徒歩分\n\n${ramenLine ? ramenLine + "\n" : ""}${sideLine ? sideLine + "\n" : ""}${orderLine ? orderLine + "\n" : ""}${prefLine ? prefLine + "\n" : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n🗾：${address}\n🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #日本拉麵 #日本美食 #日本旅遊\n${tags}\n #ラーメン #ラーメン好き #奶辰吃拉麵`;
 }
 
 export default function ReviewsPage() {

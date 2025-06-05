@@ -74,6 +74,8 @@ export interface Review {
 	images: string[];
 	searchTokens?: string[];
 	source?: string;
+	order_method: "食券機" | "注文制";
+	payment_method: Array<"現金" | "QR決済" | "交通系IC" | "クレジットカード">;
 }
 
 // 標籤類型
