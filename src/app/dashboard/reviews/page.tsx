@@ -68,7 +68,7 @@ import {
 	where,
 } from "firebase/firestore";
 import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
-import { Edit, Plus, Search, Settings2, Star, Trash2, X } from "lucide-react";
+import { Edit, Plus, Search, Settings2, Star, Trash2, X, Instagram } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -111,11 +111,56 @@ interface Review {
 	updated_at: { toDate: () => Date };
 	searchTokens?: string;
 	source?: string;
+	ig_post_data?: { content: string };
+	tags?: string[];
+}
+
+// IG Post Content Generator
+function generateIgPostContent(review: Review, shop?: Shop): string {
+	// Helper: 全角to半角
+	const toHalfWidth = (str: string) => str.replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+	// Helper: remove whitespace
+	const removeWhitespace = (str: string) => str.replace(/\s+/g, "");
+	// Title from notes
+	let title = "";
+	if (review.notes) {
+		const firstLine = review.notes.split("\n")[0];
+		if (firstLine.startsWith("#")) title = firstLine;
+	}
+	// Shop name hashtag
+	const shopTag = review.shop_name ? `#${toHalfWidth(removeWhitespace(review.shop_name))}` : "";
+	// 拉麵品項
+	const ramenLine = review.ramen_items && review.ramen_items.length > 0 ?
+		`拉麵🍜：${review.ramen_items.map(item => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}` : "";
+	// 配菜
+	const sideLine = review.side_menu && review.side_menu.length > 0 ?
+		`配菜🍥：${review.side_menu.map(item => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}` : "";
+	// 客製
+	const prefLine = review.ramen_items && review.ramen_items.some(item => item.preference) ?
+		`客製🆓：${review.ramen_items.filter(item => item.preference).map(item => item.preference).join(", ")}` : "";
+	// Notes (skip first line if it's a title)
+	let notesBlock = review.notes || "";
+	if (title && notesBlock.startsWith(title)) {
+		notesBlock = notesBlock.split("\n").slice(1).join("\n");
+	}
+	// Address
+	const address = shop?.address || "";
+	// Date/time
+	const visitDate = review.visit_date?.toDate ? review.visit_date.toDate() : undefined;
+	const dateStr = visitDate ? `${visitDate.getFullYear()}.${(visitDate.getMonth()+1).toString().padStart(2,"0")}.${visitDate.getDate().toString().padStart(2,"0")}` : "";
+	const timeStr = visitDate ? `${visitDate.getHours().toString().padStart(2,"0")}:${visitDate.getMinutes().toString().padStart(2,"0")}` : "";
+	// 人數/預約
+	const people = review.people_count || "";
+	const reservationType = review.reservation_type === "no_line" ? "無排隊" : review.reservation_type === "lined_up" ? "有排隊" : review.reservation_type;
+	// Tags
+	const tags = review.tags && review.tags.length > 0 ? review.tags.map(t => t.startsWith("#") ? t : `#${t}`).join(" ") : "";
+	// Compose
+	return `${title ? `${title}\n` : ""}${shopTag}\n📍駅徒歩分\n\n${ramenLine ? ramenLine + "\n" : ""}${sideLine ? sideLine + "\n" : ""}點餐💁：食券機・(現金、キャッシュレス)\n${prefLine ? prefLine + "\n" : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n🗾：${address}\n🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #日本拉麵 #日本美食 #日本旅遊\n${tags}\n #ラーメン #ラーメン好き #奶辰吃拉麵`;
 }
 
 export default function ReviewsPage() {
 	const router = useRouter();
-	const { getDocuments, deleteDocument, loading, error } =
+	const { getDocuments, deleteDocument, loading, error, updateDocument } =
 		useFirestore("reviews");
 	const [reviews, setReviews] = useState<Review[]>([]);
 	const [searchQuery, setSearchQuery] = useState("");
@@ -140,6 +185,7 @@ export default function ReviewsPage() {
 		[key: string]: Record<string, unknown>;
 	}>({});
 	const { getDocument } = useFirestore("shops");
+	const [igUpdatingId, setIgUpdatingId] = useState<string | null>(null);
 
 	// Add debounced search
 	useEffect(() => {
@@ -388,6 +434,17 @@ export default function ReviewsPage() {
 		}
 	}, [reviews, fetchShopData, shopData]);
 
+	// Copy-to-clipboard utility (reuse from settings)
+	const copyToClipboard = async (text: string) => {
+		try {
+			await navigator.clipboard.writeText(text);
+			toast.success("已複製到剪貼簿");
+		} catch (err) {
+			toast.error("複製失敗");
+			console.error("Failed to copy:", err);
+		}
+	};
+
 	return (
 		<div>
 			<div className="flex items-center gap-4 mb-6 mt-4">
@@ -623,6 +680,42 @@ export default function ReviewsPage() {
 												<Link href={`/dashboard/reviews/${review.id}`}>
 													<Settings2 className="h-4 w-4" />
 												</Link>
+											</Button>
+											<Button
+												variant="ghost"
+												className="text-pink-500 hover:text-pink-600"
+												title="複製 IG 內容"
+												disabled={igUpdatingId === review.id}
+												onClick={async () => {
+													if (igUpdatingId) return;
+													let igContent = review.ig_post_data?.content;
+													if (!igContent) {
+														setIgUpdatingId(review.id);
+														try {
+															const shop = shopData[review.shop_id] as unknown as Shop | undefined;
+															igContent = generateIgPostContent(review, shop);
+															// Save to Firestore
+															const success = await updateDocument(review.id, { ig_post_data: { content: igContent } });
+															if (success) {
+																toast.success("IG 內容已生成並儲存");
+																// Optionally update local state for instant UI update
+																setReviews((prev) => prev.map(r => r.id === review.id ? { ...r, ig_post_data: { content: igContent || "" } } : r));
+															} else {
+																toast.error("儲存 IG 內容失敗");
+																setIgUpdatingId(null);
+																return;
+															}
+														} catch (err) {
+															toast.error("儲存 IG 內容失敗");
+															setIgUpdatingId(null);
+															return;
+														}
+														setIgUpdatingId(null);
+													}
+													await copyToClipboard(igContent!);
+												}}
+											>
+												<Instagram className="h-4 w-4" />
 											</Button>
 											<AlertDialog
 												open={reviewToDelete === review.id}
