@@ -109,13 +109,8 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 	const [confirmationTarget, setConfirmationTarget] = useState<string | null>(
 		null,
 	);
-	const [nearestStation, setNearestStation] = useState<null | {
-		name: string;
-		distance_meters: number;
-		walking_time_minutes: number;
-		walking_time_text: string;
-		distance_text: string;
-	}>(null);
+	const [nearestStations, setNearestStations] = useState<any[]>([]);
+	const [selectedStationIdx, setSelectedStationIdx] = useState<number>(0);
 	const [stationLoading, setStationLoading] = useState(false);
 	const [stationError, setStationError] = useState<StationError | null>(null);
 
@@ -403,7 +398,8 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 		setSearchQuery("");
 
 		// --- Nearest Station Logic ---
-		setNearestStation(null);
+		setNearestStations([]);
+		setSelectedStationIdx(0);
 		setStationError(null);
 		if (place.location?.latitude && place.location?.longitude) {
 			setStationLoading(true);
@@ -424,13 +420,8 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 					return;
 				}
 				const data = await res.json();
-				setNearestStation({
-					name: data.station.name,
-					distance_meters: data.distance_meters,
-					walking_time_minutes: data.walking_time_minutes,
-					walking_time_text: data.walking_time_text,
-					distance_text: data.distance_text,
-				});
+				setNearestStations(data.stations || []);
+				setSelectedStationIdx(0);
 			} catch (err: any) {
 				setStationError({ message: err.message || "找不到最近車站", stage: "fetch-catch" });
 			} finally {
@@ -707,7 +698,7 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 												最近車站資訊載入中...
 											</div>
 										)}
-										{stationError && !nearestStation && (
+										{stationError && !nearestStations.length && (
 											<div className="text-destructive text-sm mt-1">
 												{typeof stationError === 'string' ? stationError : stationError.message}
 												{typeof stationError === 'object' && stationError.stage && (
@@ -721,15 +712,31 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 												)}
 											</div>
 										)}
-										{nearestStation && !stationLoading && !stationError && (
-											<div className="rounded-lg border bg-card p-3 flex flex-col gap-1 shadow-sm">
-												<div className="flex items-center gap-2">
-													<span className="font-semibold text-base">🚉 最近車站</span>
-													<span className="text-primary font-medium">{nearestStation.name}</span>
+										{nearestStations.length > 0 && !stationLoading && !stationError && (
+											<div className="rounded-lg border bg-card p-3 flex flex-col gap-2 shadow-sm">
+												<div className="font-semibold text-base mb-1">🚉 最近車站 (步行20分鐘內)</div>
+												<div className="flex flex-col gap-1">
+													{nearestStations.map((station, idx) => (
+														<label key={idx} className="flex items-center gap-2 cursor-pointer">
+															<input
+																type="radio"
+																name="nearestStation"
+																checked={selectedStationIdx === idx}
+																onChange={() => setSelectedStationIdx(idx)}
+																className="accent-primary"
+															/>
+															<span className="font-medium text-primary">{station.name}</span>
+															<span className="text-xs text-muted-foreground">步行 {station.walking_time_text} ({station.walking_time_minutes} 分)・{station.distance_text} ({station.distance_meters} 公尺)</span>
+														</label>
+													))}
 												</div>
-												<div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
-													<span>步行 {nearestStation.walking_time_text} ({nearestStation.walking_time_minutes} 分)</span>
-													<span>距離 {nearestStation.distance_text} ({nearestStation.distance_meters} 公尺)</span>
+												{/* Show selected station info in modern style */}
+												<div className="mt-2 p-2 rounded border bg-muted">
+													<div className="font-semibold">已選擇：{nearestStations[selectedStationIdx]?.name}</div>
+													<div className="text-sm text-muted-foreground">
+													  步行 {nearestStations[selectedStationIdx]?.walking_time_text} ({nearestStations[selectedStationIdx]?.walking_time_minutes} 分)・
+													  距離 {nearestStations[selectedStationIdx]?.distance_text} ({nearestStations[selectedStationIdx]?.distance_meters} 公尺)
+													</div>
 												</div>
 											</div>
 										)}

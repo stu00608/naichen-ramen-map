@@ -12,7 +12,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Google Places API key not configured", stage: "config" }, { status: 500 });
     }
 
-    // 1. Find nearest train station using Google Places Nearby Search
+    // 1. Find up to 5 nearest train stations using Google Places Nearby Search
     const stationType = country === "JP" ? "train_station" : "transit_station";
     const placesUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${latitude},${longitude}&rankby=distance&type=${stationType}&key=${apiKey}`;
     const placesRes = await fetch(placesUrl);
@@ -21,29 +21,40 @@ export async function POST(request: Request) {
     if (placesData.status !== "OK" || !placesData.results || placesData.results.length === 0) {
       return NextResponse.json({ message: "No nearby station found", stage: "places", googleStatus: placesData.status }, { status: 400 });
     }
-    const station = placesData.results[0];
-    const stationLocation = station.geometry.location;
 
-    // 2. Get walking distance and time using Google Directions API
-    const directionsUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=${stationLocation.lat},${stationLocation.lng}&destination=${latitude},${longitude}&mode=walking&key=${apiKey}`;
-    const directionsRes = await fetch(directionsUrl);
-    const directionsData = await directionsRes.json();
+    // Take up to 5 stations to check walking time
+    const candidateStations = placesData.results.slice(0, 5);
+    const stationInfos = [];
 
-    if (directionsData.status !== "OK" || !directionsData.routes || directionsData.routes.length === 0) {
-      return NextResponse.json({ message: "No walking route found", stage: "directions", googleStatus: directionsData.status }, { status: 400 });
+    for (const station of candidateStations) {
+      const stationLocation = station.geometry.location;
+      // 2. Get walking distance and time using Google Directions API
+      const directionsUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=${stationLocation.lat},${stationLocation.lng}&destination=${latitude},${longitude}&mode=walking&key=${apiKey}`;
+      const directionsRes = await fetch(directionsUrl);
+      const directionsData = await directionsRes.json();
+      if (directionsData.status !== "OK" || !directionsData.routes || directionsData.routes.length === 0) {
+        continue; // skip this station if no walking route
+      }
+      const leg = directionsData.routes[0].legs[0];
+      const walkingTimeMinutes = Math.round(leg.duration.value / 60);
+      if (walkingTimeMinutes <= 20) {
+        stationInfos.push({
+          name: station.name,
+          location: stationLocation,
+          distance_meters: leg.distance.value,
+          walking_time_minutes: walkingTimeMinutes,
+          walking_time_text: leg.duration.text,
+          distance_text: leg.distance.text,
+        });
+      }
+      if (stationInfos.length >= 3) break;
     }
-    const leg = directionsData.routes[0].legs[0];
 
-    return NextResponse.json({
-      station: {
-        name: station.name,
-        location: stationLocation,
-      },
-      distance_meters: leg.distance.value,
-      walking_time_minutes: Math.round(leg.duration.value / 60),
-      walking_time_text: leg.duration.text,
-      distance_text: leg.distance.text,
-    });
+    if (stationInfos.length === 0) {
+      return NextResponse.json({ message: "No nearby station within 20 min walking", stage: "directions", googleStatus: placesData.status }, { status: 400 });
+    }
+
+    return NextResponse.json({ stations: stationInfos });
   } catch (error) {
     console.error("Nearest Station API error:", error);
     return NextResponse.json({ message: "Failed to find nearest station", stage: "catch", error: error }, { status: 500 });
@@ -52,4 +63,4 @@ export async function POST(request: Request) {
 
 export async function GET() {
   return NextResponse.json({ message: "Method Not Allowed" }, { status: 405 });
-} 
+}
