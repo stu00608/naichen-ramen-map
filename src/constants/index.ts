@@ -115,3 +115,6 @@ export const DAYS_OF_WEEK = [
 	"星期六",
 	"星期日",
 ] as const;
+
+export const ORDER_METHOD_OPTIONS = ["食券機", "注文制"] as const;
+export const PAYMENT_METHOD_OPTIONS = ["現金", "QR決済", "交通系IC", "クレジットカード"] as const;

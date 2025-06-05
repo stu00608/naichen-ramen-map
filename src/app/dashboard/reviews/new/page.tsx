@@ -43,6 +43,8 @@ import {
 	MAX_RAMEN_ITEMS,
 	MAX_SIDE_MENU_ITEMS,
 	RESERVATION_TYPES,
+	ORDER_METHOD_OPTIONS,
+	PAYMENT_METHOD_OPTIONS,
 } from "@/constants";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -142,6 +144,8 @@ export default function NewReviewPage() {
 			overall_score: 0,
 			notes: "",
 			images: [],
+			order_method: ORDER_METHOD_OPTIONS[0],
+			payment_method: [],
 		},
 	});
 
@@ -425,6 +429,8 @@ export default function NewReviewPage() {
 			overall_score: 0,
 			notes: "",
 			images: [],
+			order_method: ORDER_METHOD_OPTIONS[0],
+			payment_method: [],
 		});
 
 		// Clear selected shop
@@ -757,6 +763,53 @@ export default function NewReviewPage() {
 										/>
 									</div>
 								)}
+
+								{/* Order Method */}
+								<div className="col-span-1 space-y-2">
+									<FormField
+										control={control}
+										name="order_method"
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>點餐方式</FormLabel>
+												<Select onValueChange={field.onChange} value={field.value}>
+													<FormControl>
+														<SelectTrigger className="w-full h-10">
+															<SelectValue placeholder="選擇點餐方式" />
+														</SelectTrigger>
+													</FormControl>
+													<SelectContent>
+														{ORDER_METHOD_OPTIONS.map((option) => (
+															<SelectItem key={option} value={option}>{option}</SelectItem>
+														))}
+													</SelectContent>
+												</Select>
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+								</div>
+
+								{/* Payment Method */}
+								<div className="col-span-2 space-y-2">
+									<FormField
+										control={control}
+										name="payment_method"
+										render={({ field }) => (
+											<FormItem>
+												<FormLabel>付款方式</FormLabel>
+												<MultipleSelector
+													value={field.value.map((v: string) => ({ value: v, label: v }))}
+													onChange={(selected) => field.onChange(selected.map((s: any) => s.value))}
+													options={PAYMENT_METHOD_OPTIONS.map((option) => ({ value: option, label: option }))}
+													placeholder="選擇付款方式"
+													className="w-full"
+												/>
+												<FormMessage />
+											</FormItem>
+										)}
+									/>
+								</div>
 							</div>
 						</CardContent>
 					</Card>
