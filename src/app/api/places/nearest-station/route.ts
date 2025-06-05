@@ -12,9 +12,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Google Places API key not configured", stage: "config" }, { status: 500 });
     }
 
+    // Set language code based on country
+    let language = "";
+    if (country === "JP") language = "ja";
+    else if (country === "TW") language = "zh-TW";
+    // You can add more country-language mappings as needed
+
     // 1. Find up to 5 nearest train stations using Google Places Nearby Search
     const stationType = country === "JP" ? "train_station" : "transit_station";
-    const placesUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${latitude},${longitude}&rankby=distance&type=${stationType}&key=${apiKey}`;
+    const placesUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${latitude},${longitude}&rankby=distance&type=${stationType}&key=${apiKey}${language ? `&language=${language}` : ''}`;
     const placesRes = await fetch(placesUrl);
     const placesData = await placesRes.json();
 
