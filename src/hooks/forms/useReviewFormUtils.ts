@@ -1,5 +1,5 @@
 import { useFirestore } from "@/hooks/useFirestore";
-import { GeoPoint, Timestamp } from "firebase/firestore";
+import { type GeoPoint, Timestamp } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 
@@ -12,6 +12,7 @@ export interface ShopData {
 	address?: string;
 	shop_types?: string[];
 	googleMapsUri?: string;
+	googlePlaceId?: string;
 	location?: GeoPoint;
 	// Add other fields as needed
 }
@@ -72,7 +73,9 @@ export const reviewSchema = z.object({
 	notes: z.string().optional(),
 	images: z.array(z.string()).optional(),
 	order_method: z.enum(["食券機", "注文制"]),
-	payment_method: z.array(z.enum(["現金", "QR決済", "交通系IC", "クレジットカード"])),
+	payment_method: z.array(
+		z.enum(["現金", "QR決済", "交通系IC", "クレジットカード"]),
+	),
 });
 
 export type ReviewFormData = z.infer<typeof reviewSchema>;

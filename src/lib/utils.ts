@@ -1,9 +1,9 @@
-import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
 import type { ReviewFormData } from "@/hooks/forms/useReviewFormUtils";
 import type { ShopData } from "@/hooks/forms/useReviewFormUtils";
 import type { Review } from "@/types";
 import type { StationError } from "@/types";
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
@@ -94,14 +94,20 @@ export function generateRandomCode(length = 6): string {
 }
 
 // IG Post Content Generator
-export function generateIgPostContent(review: ReviewFormData & {
-	nearest_station_name?: string;
-	nearest_station_walking_time_minutes?: number;
-	nearest_station_distance_meters?: number;
-	tags?: string[];
-}, shop?: ShopData): string {
+export function generateIgPostContent(
+	review: ReviewFormData & {
+		nearest_station_name?: string;
+		nearest_station_walking_time_minutes?: number;
+		nearest_station_distance_meters?: number;
+		tags?: string[];
+	},
+	shop?: ShopData,
+): string {
 	// Helper: 全角to半角
-	const toHalfWidth = (str: string) => str.replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+	const toHalfWidth = (str: string) =>
+		str.replace(/[！-～]/g, (c) =>
+			String.fromCharCode(c.charCodeAt(0) - 0xfee0),
+		);
 	// Helper: remove whitespace
 	const removeWhitespace = (str: string) => str.replace(/\s+/g, "");
 	// Title from notes
@@ -112,21 +118,37 @@ export function generateIgPostContent(review: ReviewFormData & {
 		if (firstLine.startsWith("#")) title = firstLine.slice(1).trim();
 	}
 	// Shop name hashtag
-	const shopTag = review.shop_name ? `#${toHalfWidth(removeWhitespace(review.shop_name))}` : "";
+	const shopTag = review.shop_name
+		? `#${toHalfWidth(removeWhitespace(review.shop_name))}`
+		: "";
 	// 拉麵品項
-	const ramenLine = review.ramen_items && review.ramen_items.length > 0 ?
-		`拉麵🍜：${review.ramen_items.map((item: any) => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}` : "";
+	const ramenLine =
+		review.ramen_items && review.ramen_items.length > 0
+			? `拉麵🍜：${review.ramen_items.map((item: any) => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}`
+			: "";
 	// 配菜
-	const sideLine = review.side_menu && review.side_menu.length > 0 ?
-		`配菜🍥：${review.side_menu.map((item: any) => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}` : "";
+	const sideLine =
+		review.side_menu && review.side_menu.length > 0
+			? `配菜🍥：${review.side_menu.map((item: any) => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}`
+			: "";
 	// 點餐/付款
-	const orderLine = review.order_method ? `點餐💁：${review.order_method}${review.payment_method && review.payment_method.length > 0 ? `・(${review.payment_method.join("、")})` : ""}` : "";
+	const orderLine = review.order_method
+		? `點餐💁：${review.order_method}${review.payment_method && review.payment_method.length > 0 ? `・(${review.payment_method.join("、")})` : ""}`
+		: "";
 	// 客製
-	const prefLine = review.ramen_items && review.ramen_items.some((item: any) => item.preference) ?
-		`客製🆓：${review.ramen_items.filter((item: any) => item.preference).map((item: any) => item.preference).join(", ")}` : "";
+	const prefLine = review.ramen_items?.some((item: any) => item.preference)
+		? `客製🆓：${review.ramen_items
+				.filter((item: any) => item.preference)
+				.map((item: any) => item.preference)
+				.join(", ")}`
+		: "";
 	// Nearest Station (use numeric values)
-	const stationLine = (review.nearest_station_name && review.nearest_station_walking_time_minutes !== undefined && review.nearest_station_distance_meters !== undefined) ?
-		`📍${review.nearest_station_name}徒歩${review.nearest_station_walking_time_minutes}分（${review.nearest_station_distance_meters}m）` : "";
+	const stationLine =
+		review.nearest_station_name &&
+		review.nearest_station_walking_time_minutes !== undefined &&
+		review.nearest_station_distance_meters !== undefined
+			? `📍${review.nearest_station_name}徒歩${review.nearest_station_walking_time_minutes}分（${review.nearest_station_distance_meters}m）`
+			: "";
 	// Notes (skip first line if it\'s a title)
 	let notesBlock = review.notes || "";
 	if (title && notesBlock.startsWith(title)) {
@@ -136,12 +158,21 @@ export function generateIgPostContent(review: ReviewFormData & {
 	const address = shop?.address || "";
 	// Date/time
 	const visitDate = review.visit_date;
-	const dateStr = visitDate ? `${visitDate.getFullYear()}.${(visitDate.getMonth()+1).toString().padStart(2,"0")}.${visitDate.getDate().toString().padStart(2,"0")}` : "";
-	const timeStr = visitDate ? `${visitDate.getHours().toString().padStart(2,"0")}:${visitDate.getMinutes().toString().padStart(2,"0")}` : "";
+	const dateStr = visitDate
+		? `${visitDate.getFullYear()}.${(visitDate.getMonth() + 1).toString().padStart(2, "0")}.${visitDate.getDate().toString().padStart(2, "0")}`
+		: "";
+	const timeStr = visitDate
+		? `${visitDate.getHours().toString().padStart(2, "0")}:${visitDate.getMinutes().toString().padStart(2, "0")}`
+		: "";
 	// 人數/預約
 	const people = review.people_count || "";
 
-	let reservationType = review.reservation_type === "no_line" ? "無排隊" : review.reservation_type === "lined_up" ? "有排隊" : review.reservation_type;
+	let reservationType =
+		review.reservation_type === "no_line"
+			? "無排隊"
+			: review.reservation_type === "lined_up"
+				? "有排隊"
+				: review.reservation_type;
 
 	// Append wait_time if reservationType is "有排隊"
 	if (review.reservation_type === "lined_up" && review.wait_time) {
@@ -149,7 +180,12 @@ export function generateIgPostContent(review: ReviewFormData & {
 	}
 
 	// Tags
-	const tags = review.tags && review.tags.length > 0 ? review.tags.map((t: string) => t.startsWith("#") ? t : `#${t}`).join(" ") : "";
+	const tags =
+		review.tags && review.tags.length > 0
+			? review.tags
+					.map((t: string) => (t.startsWith("#") ? t : `#${t}`))
+					.join(" ")
+			: "";
 
 	// Add conditional tag based on overall score
 	let scoreTag = "";
@@ -165,5 +201,5 @@ export function generateIgPostContent(review: ReviewFormData & {
 	const finalTags = tags ? `${tags} ${scoreTag}`.trim() : scoreTag;
 
 	// Compose
-	return `${title ? `${title}\n` : ""}${shopTag}\n${stationLine ? stationLine + '\n' : ''}\n${ramenLine ? ramenLine + "\n" : ""}${sideLine ? sideLine + "\n" : ""}${orderLine ? orderLine + "\n" : ""}${prefLine ? prefLine + "\n" : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n${address ? `🗾：${address}\n` : ''}🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #ラーメン #ラーメン好き #奶辰吃拉麵 #日本拉麵 #日本美食 #日本旅遊 ${finalTags}`;
+	return `${title ? `${title}\n` : ""}${shopTag}\n${stationLine ? `${stationLine}\n` : ""}\n${ramenLine ? `${ramenLine}\n` : ""}${sideLine ? `${sideLine}\n` : ""}${orderLine ? `${orderLine}\n` : ""}${prefLine ? `${prefLine}\n` : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n${address ? `🗾：${address}\n` : ""}🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #ラーメン #ラーメン好き #奶辰吃拉麵 #日本拉麵 #日本美食 #日本旅遊 ${finalTags}`;
 }

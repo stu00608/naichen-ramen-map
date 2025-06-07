@@ -42,9 +42,9 @@ import { StarRating } from "@/components/ui/star-rating";
 import {
 	MAX_RAMEN_ITEMS,
 	MAX_SIDE_MENU_ITEMS,
-	RESERVATION_TYPES,
 	ORDER_METHOD_OPTIONS,
 	PAYMENT_METHOD_OPTIONS,
+	RESERVATION_TYPES,
 } from "@/constants";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -56,8 +56,10 @@ import {
 } from "@/hooks/forms/useReviewFormUtils";
 import { useFirestore } from "@/hooks/useFirestore";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
+import { generateIgPostContent } from "@/lib/utils";
+import type { StationError } from "@/types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
 import {
@@ -73,8 +75,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { generateIgPostContent } from "@/lib/utils";
-import { StationError } from "@/types";
 
 export default function NewReviewPage() {
 	const router = useRouter();
@@ -294,13 +294,29 @@ export default function NewReviewPage() {
 					setSelectedStationIdx(0);
 					setStationError(null);
 					try {
+						if (!user) {
+							setIsSearching(false);
+							return;
+						}
+
+						const idToken = await auth.currentUser?.getIdToken();
+
+						if (!idToken) {
+							setIsSearching(false);
+							return;
+						}
+
 						const res = await fetch("/api/places/nearest-station", {
 							method: "POST",
-							headers: { "Content-Type": "application/json" },
+							headers: {
+								"Content-Type": "application/json",
+								Authorization: `Bearer ${idToken}`,
+							},
 							body: JSON.stringify({
 								latitude: shopData.location.latitude,
 								longitude: shopData.location.longitude,
 								country: shopData.country,
+								destinationPlaceId: shopData.googlePlaceId,
 							}),
 						});
 						if (!res.ok) {
@@ -313,7 +329,10 @@ export default function NewReviewPage() {
 							setSelectedStationIdx(0);
 						}
 					} catch (err: any) {
-						setStationError({ message: err.message || "找不到最近車站", stage: "fetch-catch" });
+						setStationError({
+							message: err.message || "找不到最近車站",
+							stage: "fetch-catch",
+						});
 					} finally {
 						setStationLoading(false);
 					}
@@ -398,12 +417,15 @@ export default function NewReviewPage() {
 			const submitData = {
 				...data,
 				nearest_station_name: selectedStation?.name,
-				nearest_station_walking_time_minutes: selectedStation?.walking_time_minutes,
+				nearest_station_walking_time_minutes:
+					selectedStation?.walking_time_minutes,
 				nearest_station_distance_meters: selectedStation?.distance_meters,
 			};
 
 			// Fetch shop data for IG post
-			const shopDataForIG = submitData.shop_id ? await fetchShopData(submitData.shop_id) : undefined;
+			const shopDataForIG = submitData.shop_id
+				? await fetchShopData(submitData.shop_id)
+				: undefined;
 			const shopForIG = shopDataForIG || undefined;
 
 			// Generate IG post content
@@ -831,7 +853,10 @@ export default function NewReviewPage() {
 										render={({ field }) => (
 											<FormItem>
 												<FormLabel>點餐方式</FormLabel>
-												<Select onValueChange={field.onChange} value={field.value}>
+												<Select
+													onValueChange={field.onChange}
+													value={field.value}
+												>
 													<FormControl>
 														<SelectTrigger className="w-full h-10">
 															<SelectValue placeholder="選擇點餐方式" />
@@ -839,7 +864,9 @@ export default function NewReviewPage() {
 													</FormControl>
 													<SelectContent>
 														{ORDER_METHOD_OPTIONS.map((option) => (
-															<SelectItem key={option} value={option}>{option}</SelectItem>
+															<SelectItem key={option} value={option}>
+																{option}
+															</SelectItem>
 														))}
 													</SelectContent>
 												</Select>
@@ -858,9 +885,17 @@ export default function NewReviewPage() {
 											<FormItem>
 												<FormLabel>付款方式</FormLabel>
 												<MultipleSelector
-													value={field.value.map((v: string) => ({ value: v, label: v }))}
-													onChange={(selected) => field.onChange(selected.map((s: any) => s.value))}
-													options={PAYMENT_METHOD_OPTIONS.map((option) => ({ value: option, label: option }))}
+													value={field.value.map((v: string) => ({
+														value: v,
+														label: v,
+													}))}
+													onChange={(selected) =>
+														field.onChange(selected.map((s: any) => s.value))
+													}
+													options={PAYMENT_METHOD_OPTIONS.map((option) => ({
+														value: option,
+														label: option,
+													}))}
 													placeholder="選擇付款方式"
 													className="w-full"
 												/>
@@ -1173,15 +1208,22 @@ export default function NewReviewPage() {
 						)}
 						{stationError && nearestStations.length === 0 && (
 							<div className="text-destructive text-sm mt-1">
-								{typeof stationError === 'string' ? stationError : stationError.message}
-								{typeof stationError === 'object' && stationError.stage && (
+								{typeof stationError === "string"
+									? stationError
+									: stationError.message}
+								{typeof stationError === "object" && stationError.stage && (
 									<span className="ml-2">[stage: {stationError.stage}]</span>
 								)}
-								{typeof stationError === 'object' && stationError.googleStatus && (
-									<span className="ml-2">[google: {stationError.googleStatus}]</span>
-								)}
-								{typeof stationError === 'object' && stationError.error && (
-									<span className="ml-2">[error: {JSON.stringify(stationError.error)}]</span>
+								{typeof stationError === "object" &&
+									stationError.googleStatus && (
+										<span className="ml-2">
+											[google: {stationError.googleStatus}]
+										</span>
+									)}
+								{typeof stationError === "object" && stationError.error && (
+									<span className="ml-2">
+										[error: {JSON.stringify(stationError.error)}]
+									</span>
 								)}
 							</div>
 						)}
@@ -1190,7 +1232,10 @@ export default function NewReviewPage() {
 								<div className="font-semibold text-base mb-1">選擇最近車站</div>
 								<div className="flex flex-col gap-1">
 									{nearestStations.map((station, idx) => (
-										<label key={idx} className="flex items-center gap-2 cursor-pointer">
+										<label
+											key={idx}
+											className="flex items-center gap-2 cursor-pointer"
+										>
 											<input
 												type="radio"
 												name="nearestStation"
@@ -1198,17 +1243,29 @@ export default function NewReviewPage() {
 												onChange={() => setSelectedStationIdx(idx)}
 												className="accent-primary"
 											/>
-											<span className="font-medium text-primary">{station.name}</span>
-											<span className="text-xs text-muted-foreground">步行 {station.walking_time_text} ({station.walking_time_minutes} 分)・{station.distance_text} ({station.distance_meters} 公尺)</span>
+											<span className="font-medium text-primary">
+												{station.name}
+											</span>
+											<span className="text-xs text-muted-foreground">
+												步行 {station.walking_time_text} (
+												{station.walking_time_minutes} 分)・
+												{station.distance_text} ({station.distance_meters} 公尺)
+											</span>
 										</label>
 									))}
 								</div>
 								{/* Show selected station info in modern style */}
 								<div className="mt-2 p-2 rounded border bg-muted">
-									<div className="font-semibold">已選擇：{nearestStations[selectedStationIdx]?.name}</div>
+									<div className="font-semibold">
+										已選擇：{nearestStations[selectedStationIdx]?.name}
+									</div>
 									<div className="text-sm text-muted-foreground">
-										步行 {nearestStations[selectedStationIdx]?.walking_time_text} ({nearestStations[selectedStationIdx]?.walking_time_minutes} 分)・
-										距離 {nearestStations[selectedStationIdx]?.distance_text} ({nearestStations[selectedStationIdx]?.distance_meters} 公尺)
+										步行{" "}
+										{nearestStations[selectedStationIdx]?.walking_time_text} (
+										{nearestStations[selectedStationIdx]?.walking_time_minutes}{" "}
+										分)・ 距離{" "}
+										{nearestStations[selectedStationIdx]?.distance_text} (
+										{nearestStations[selectedStationIdx]?.distance_meters} 公尺)
 									</div>
 								</div>
 							</div>

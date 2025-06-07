@@ -28,6 +28,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { COUNTRIES, DAYS_OF_WEEK, RAMEN_TYPES, REGIONS } from "@/constants";
+import { useAuth } from "@/contexts/auth-context";
 import { useGooglePlaceIdValidation } from "@/hooks/forms/useGooglePlaceIdValidation";
 import {
 	type ShopFormData,
@@ -36,6 +37,7 @@ import {
 } from "@/hooks/forms/useShopFormUtils";
 import { useFirestore } from "@/hooks/useFirestore";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
+import { auth } from "@/lib/firebase";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { GeoPoint, Timestamp } from "firebase/firestore";
 import { Clock3, Search } from "lucide-react";
@@ -56,7 +58,9 @@ interface DaySchedule {
 	isClosed: boolean;
 }
 
-type StationError = string | { message?: string; stage?: string; googleStatus?: string; error?: any };
+type StationError =
+	| string
+	| { message?: string; stage?: string; googleStatus?: string; error?: any };
 
 export default function NewShopPage() {
 	const { addDocument, loading, error, checkDocumentExists } =
@@ -92,6 +96,7 @@ export default function NewShopPage() {
 	const [selectedStationIdx, setSelectedStationIdx] = useState<number>(0);
 	const [stationLoading, setStationLoading] = useState(false);
 	const [stationError, setStationError] = useState<StationError | null>(null);
+	const { user } = useAuth();
 
 	const {
 		control,
@@ -111,7 +116,7 @@ export default function NewShopPage() {
 			tags: [],
 			business_hours: getDefaultBusinessHours(),
 			closed_days: [],
-			google_place_id: "",
+			googlePlaceId: "",
 		},
 	});
 
@@ -235,30 +240,41 @@ export default function NewShopPage() {
 		try {
 			setIsSearching(true);
 
+			// Add authentication check
+			if (!user) {
+				setGeoError("User not authenticated.");
+				setIsSearching(false);
+				return;
+			}
+
+			const idToken = await auth.currentUser?.getIdToken();
+
+			if (!idToken) {
+				setGeoError("Could not retrieve authentication token.");
+				setIsSearching(false);
+				return;
+			}
+
 			const response = await fetch("/api/places/search", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
+					Authorization: `Bearer ${idToken}`,
 				},
 				body: JSON.stringify({ query: searchQuery, country: countryValue }),
 			});
 
+			const data = await response.json();
+
 			if (!response.ok) {
-				throw new Error("搜尋失敗");
+				throw new Error(data.message || "搜尋失敗");
 			}
 
-			const data = await response.json();
-			if (Array.isArray(data.results)) {
-				setSearchResults(data.results);
-				setShowPlacesResults(true);
-			} else {
-				setSearchResults([]);
-				toast.info("沒有找到符合的店家");
-			}
-		} catch (err) {
-			console.error("Places search error:", err);
+			setSearchResults(data.results);
+			setShowPlacesResults(true);
+		} catch (err: any) {
+			setGeoError(err.message || "搜尋失敗");
 			setSearchResults([]);
-			toast.error("搜尋店家時發生錯誤");
 		} finally {
 			setIsSearching(false);
 		}
@@ -279,7 +295,7 @@ export default function NewShopPage() {
 		// Check if this Google Place ID is already registered
 		if (place.id) {
 			try {
-				const exists = await checkDocumentExists("google_place_id", place.id);
+				const exists = await checkDocumentExists("googlePlaceId", place.id);
 				if (exists) {
 					toast.error("此店家已經在資料庫中註冊了");
 					return;
@@ -311,7 +327,7 @@ export default function NewShopPage() {
 		}
 
 		setValue("address", cleanAddress);
-		setValue("google_place_id", place.id);
+		setValue("googlePlaceId", place.id);
 
 		if (place.currentOpeningHours?.periods) {
 			const dayMap = [
@@ -391,13 +407,31 @@ export default function NewShopPage() {
 		if (place.location?.latitude && place.location?.longitude) {
 			setStationLoading(true);
 			try {
+				if (!user) {
+					setGeoError("User not authenticated.");
+					setIsSearching(false);
+					return;
+				}
+
+				const idToken = await auth.currentUser?.getIdToken();
+
+				if (!idToken) {
+					setGeoError("Could not retrieve authentication token.");
+					setIsSearching(false);
+					return;
+				}
+
 				const res = await fetch("/api/places/nearest-station", {
 					method: "POST",
-					headers: { "Content-Type": "application/json" },
+					headers: {
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${idToken}`,
+					},
 					body: JSON.stringify({
 						latitude: place.location.latitude,
 						longitude: place.location.longitude,
 						country: countryValue,
+						destinationPlaceId: place.id,
 					}),
 				});
 				if (!res.ok) {
@@ -410,7 +444,10 @@ export default function NewShopPage() {
 				setNearestStations(data.stations || []);
 				setSelectedStationIdx(0);
 			} catch (err: any) {
-				setStationError({ message: err.message || "找不到最近車站", stage: "fetch-catch" });
+				setStationError({
+					message: err.message || "找不到最近車站",
+					stage: "fetch-catch",
+				});
 			} finally {
 				setStationLoading(false);
 			}
@@ -422,7 +459,7 @@ export default function NewShopPage() {
 		setSelectedPlace(null);
 		setValue("name", "");
 		setValue("address", "");
-		setValue("google_place_id", "");
+		setValue("googlePlaceId", "");
 		setSearchQuery("");
 		toast.info("已取消店家選擇");
 	};
@@ -431,9 +468,9 @@ export default function NewShopPage() {
 		try {
 			setGeoError(null);
 
-			if (data.google_place_id) {
+			if (data.googlePlaceId) {
 				const validationResult = await validateGooglePlaceId(
-					data.google_place_id,
+					data.googlePlaceId,
 				);
 				if (typeof validationResult === "string") {
 					setGeoError(validationResult);
@@ -447,8 +484,8 @@ export default function NewShopPage() {
 				try {
 					const geoResult = await geocodeAddress(data.address, data.country);
 					locationRef.current = geoResult.location;
-					if (geoResult.google_place_id) {
-						data.google_place_id = geoResult.google_place_id;
+					if (geoResult.googlePlaceId) {
+						data.googlePlaceId = geoResult.googlePlaceId;
 					}
 					googleMapsUriRef.current = geoResult.googleMapsUri || null;
 				} catch (err: any) {
@@ -541,7 +578,7 @@ export default function NewShopPage() {
 		setValue("country", "JP");
 		setValue("region", "");
 		setValue("address", "");
-		setValue("google_place_id", "");
+		setValue("googlePlaceId", "");
 		setValue("shop_types", []);
 		setValue("tags", []);
 		setValue("business_hours", defaultBusinessHours);
@@ -633,46 +670,93 @@ export default function NewShopPage() {
 										)}
 										{stationError && !nearestStations.length && (
 											<div className="text-destructive text-sm mt-1">
-												{typeof stationError === 'string' ? stationError : stationError.message}
-												{typeof stationError === 'object' && stationError.stage && (
-													<span className="ml-2">[stage: {stationError.stage}]</span>
-												)}
-												{typeof stationError === 'object' && stationError.googleStatus && (
-													<span className="ml-2">[google: {stationError.googleStatus}]</span>
-												)}
-												{typeof stationError === 'object' && stationError.error && (
-													<span className="ml-2">[error: {JSON.stringify(stationError.error)}]</span>
-												)}
+												{typeof stationError === "string"
+													? stationError
+													: stationError.message}
+												{typeof stationError === "object" &&
+													stationError.stage && (
+														<span className="ml-2">
+															[stage: {stationError.stage}]
+														</span>
+													)}
+												{typeof stationError === "object" &&
+													stationError.googleStatus && (
+														<span className="ml-2">
+															[google: {stationError.googleStatus}]
+														</span>
+													)}
+												{typeof stationError === "object" &&
+													stationError.error && (
+														<span className="ml-2">
+															[error: {JSON.stringify(stationError.error)}]
+														</span>
+													)}
 											</div>
 										)}
-										{nearestStations.length > 0 && !stationLoading && !stationError && (
-											<div className="rounded-lg border bg-card p-3 flex flex-col gap-2 shadow-sm">
-												<div className="font-semibold text-base mb-1">🚉 最近車站 (步行20分鐘內)</div>
-												<div className="flex flex-col gap-1">
-													{nearestStations.map((station, idx) => (
-														<label key={idx} className="flex items-center gap-2 cursor-pointer">
-															<input
-																type="radio"
-																name="nearestStation"
-																checked={selectedStationIdx === idx}
-																onChange={() => setSelectedStationIdx(idx)}
-																className="accent-primary"
-															/>
-															<span className="font-medium text-primary">{station.name}</span>
-															<span className="text-xs text-muted-foreground">步行 {station.walking_time_text} ({station.walking_time_minutes} 分)・{station.distance_text} ({station.distance_meters} 公尺)</span>
-														</label>
-													))}
-												</div>
-												{/* Show selected station info in modern style */}
-												<div className="mt-2 p-2 rounded border bg-muted-foreground/10">
-													<div className="font-semibold">已選擇：{nearestStations[selectedStationIdx]?.name}</div>
-													<div className="text-sm text-muted-foreground">
-														步行 {nearestStations[selectedStationIdx]?.walking_time_text} ({nearestStations[selectedStationIdx]?.walking_time_minutes} 分)・
-														距離 {nearestStations[selectedStationIdx]?.distance_text} ({nearestStations[selectedStationIdx]?.distance_meters} 公尺)
+										{nearestStations.length > 0 &&
+											!stationLoading &&
+											!stationError && (
+												<div className="rounded-lg border bg-card p-3 flex flex-col gap-2 shadow-sm">
+													<div className="font-semibold text-base mb-1">
+														🚉 最近車站 (步行20分鐘內)
+													</div>
+													<div className="flex flex-col gap-1">
+														{nearestStations.map((station, idx) => (
+															<label
+																key={idx}
+																className="flex items-center gap-2 cursor-pointer"
+															>
+																<input
+																	type="radio"
+																	name="nearestStation"
+																	checked={selectedStationIdx === idx}
+																	onChange={() => setSelectedStationIdx(idx)}
+																	className="accent-primary"
+																/>
+																<span className="font-medium text-primary">
+																	{station.name}
+																</span>
+																<span className="text-xs text-muted-foreground">
+																	步行 {station.walking_time_text} (
+																	{station.walking_time_minutes} 分)・
+																	{station.distance_text} (
+																	{station.distance_meters} 公尺)
+																</span>
+															</label>
+														))}
+													</div>
+													{/* Show selected station info in modern style */}
+													<div className="mt-2 p-2 rounded border bg-muted-foreground/10">
+														<div className="font-semibold">
+															已選擇：
+															{nearestStations[selectedStationIdx]?.name}
+														</div>
+														<div className="text-sm text-muted-foreground">
+															步行{" "}
+															{
+																nearestStations[selectedStationIdx]
+																	?.walking_time_text
+															}{" "}
+															(
+															{
+																nearestStations[selectedStationIdx]
+																	?.walking_time_minutes
+															}{" "}
+															分)・ 距離{" "}
+															{
+																nearestStations[selectedStationIdx]
+																	?.distance_text
+															}{" "}
+															(
+															{
+																nearestStations[selectedStationIdx]
+																	?.distance_meters
+															}{" "}
+															公尺)
+														</div>
 													</div>
 												</div>
-											</div>
-										)}
+											)}
 									</div>
 									{/* End Nearest Station UI */}
 									{errors.name && (

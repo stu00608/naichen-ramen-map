@@ -24,7 +24,7 @@ export interface Shop {
 	created_at: Timestamp;
 	updated_at: Timestamp;
 	tags: string[];
-	google_place_id?: string;
+	googlePlaceId?: string;
 	isBusinessHoursAvailable: boolean;
 	googleMapsUri?: string;
 }

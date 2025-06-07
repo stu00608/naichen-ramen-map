@@ -1,7 +1,50 @@
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
 	try {
+		// Initialize Firebase Admin SDK if not already initialized
+		if (!getApps().length) {
+			const serviceAccount = JSON.parse(
+				process.env.FIREBASE_SERVICE_ACCOUNT_KEY as string,
+			);
+			initializeApp({
+				credential: cert(serviceAccount),
+			});
+		}
+
+		const auth = getAuth();
+
+		// Get the ID token from the request headers
+		const authorizationHeader = request.headers.get("Authorization");
+		if (!authorizationHeader || !authorizationHeader.startsWith("Bearer ")) {
+			return NextResponse.json(
+				{ message: "Unauthorized: No token provided" },
+				{ status: 401 },
+			);
+		}
+
+		const idToken = authorizationHeader.split("Bearer ")[1];
+
+		let decodedToken;
+		try {
+			decodedToken = await auth.verifyIdToken(idToken);
+		} catch (error) {
+			console.error("Error verifying Firebase ID token:", error);
+			return NextResponse.json(
+				{ message: "Unauthorized: Invalid token" },
+				{ status: 401 },
+			);
+		}
+
+		// Optionally, check for admin role or specific user permissions
+		// if (decodedToken.role !== "ADMIN") {
+		//   return NextResponse.json({ message: "Forbidden: Insufficient permissions" }, { status: 403 });
+		// }
+
+		console.log("Decoded token:", decodedToken);
+
 		console.log(request);
 		const { query, country } = await request.json(); // Get the query and country from the request body
 
