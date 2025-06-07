@@ -4,7 +4,7 @@ import type { Review } from "@/types";
 import type { StationError } from "@/types";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { RAMEN_HASHTAGS } from "@/constants";
+import { RAMEN_HASHTAGS, WAIT_TIME_OPTIONS } from "@/constants";
 
 export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
@@ -177,7 +177,12 @@ export function generateIgPostContent(
 
 	// Append wait_time if reservationType is "有排隊"
 	if (review.reservation_type === "lined_up" && review.wait_time) {
-		reservationType = `排隊${review.wait_time}分鐘`;
+		const waitTimeLabel = WAIT_TIME_OPTIONS.find(
+			(option) => option.value === review.wait_time,
+		)?.label;
+		if (waitTimeLabel) {
+			reservationType = `排隊${waitTimeLabel}`;
+		}
 	}
 
 	// Tags
