@@ -56,7 +56,7 @@ import {
 } from "@/components/ui/table";
 import { firestoreConstraints, useFirestore } from "@/hooks/useFirestore";
 import { db } from "@/lib/firebase";
-import type { Shop } from "@/types";
+import type { RamenItem, Review, Shop, SideMenuItem } from "@/types";
 import { format } from "date-fns";
 import {
 	collection,
@@ -68,6 +68,7 @@ import {
 	where,
 } from "firebase/firestore";
 import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
+import { Timestamp } from "firebase/firestore";
 import {
 	Edit,
 	Instagram,
@@ -83,50 +84,65 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-// Define interfaces for the review data
-interface RamenItem {
-	name: string;
-	price?: number;
-	currency: string;
-	preference?: string;
+// Helper to safely convert Firestore Timestamp to Date
+function safeToDate(timestamp: any): Date {
+	return timestamp && typeof timestamp.toDate === "function"
+		? timestamp.toDate()
+		: new Date(); // Fallback to a new Date if not a valid Timestamp
 }
 
-interface SideMenuItem {
-	name: string;
-	price?: number;
-	currency: string;
+// Helper to safely convert raw data to RamenItem array
+function safeToRamenItems(items: any): RamenItem[] {
+	let processedItems: any[] = [];
+	if (Array.isArray(items)) {
+		processedItems = items;
+	} else if (items && typeof items === "object") {
+		// Assume it's an object with numeric keys representing an array
+		for (const key in items) {
+			if (
+				Object.prototype.hasOwnProperty.call(items, key) &&
+				!Number.isNaN(Number(key))
+			) {
+				processedItems.push(items[key]);
+			}
+		}
+	}
+
+	return (processedItems as any[])
+		.filter((item) => item && typeof item === "object")
+		.map((item: any) => ({
+			name: typeof item.name === "string" ? item.name : "",
+			price: typeof item.price === "number" ? item.price : undefined,
+			currency: typeof item.currency === "string" ? item.currency : "JPY", // Default currency
+			preference:
+				typeof item.preference === "string" ? item.preference : undefined, // Ensure preference exists
+		}));
 }
 
-interface Review {
-	id: string;
-	shop_id: string;
-	shop_name?: string;
-	visit_date: { toDate: () => Date };
-	people_count: string;
-	reservation_type: string;
-	wait_time?: string;
-	ramen_items: RamenItem[];
-	side_menu: SideMenuItem[];
-	soup_score: number;
-	noodle_score: number;
-	topping_score: number;
-	appearance_score: number;
-	experience_score: number;
-	value_score: number;
-	overall_score: number;
-	notes?: string;
-	images?: string[];
-	created_at: { toDate: () => Date };
-	updated_at: { toDate: () => Date };
-	searchTokens?: string;
-	source?: string;
-	ig_post_data?: { content: string };
-	tags?: string[];
-	order_method?: string;
-	payment_method?: string[];
-	nearest_station_name?: string;
-	nearest_station_walking_time_minutes?: number;
-	nearest_station_distance_meters?: number;
+// Helper to safely convert raw data to SideMenuItem array
+function safeToSideMenuItems(items: any): SideMenuItem[] {
+	let processedItems: any[] = [];
+	if (Array.isArray(items)) {
+		processedItems = items;
+	} else if (items && typeof items === "object") {
+		// Assume it's an object with numeric keys representing an array
+		for (const key in items) {
+			if (
+				Object.prototype.hasOwnProperty.call(items, key) &&
+				!Number.isNaN(Number(key))
+			) {
+				processedItems.push(items[key]);
+			}
+		}
+	}
+
+	return (processedItems as any[])
+		.filter((item) => item && typeof item === "object")
+		.map((item: any) => ({
+			name: typeof item.name === "string" ? item.name : "",
+			price: typeof item.price === "number" ? item.price : undefined,
+			currency: typeof item.currency === "string" ? item.currency : "JPY", // Default currency
+		}));
 }
 
 export default function ReviewsPage() {
@@ -221,7 +237,98 @@ export default function ReviewsPage() {
 			if (!querySnapshot.empty) {
 				const reviewsData: Review[] = [];
 				for (const doc of querySnapshot.docs) {
-					reviewsData.push({ id: doc.id, ...doc.data() } as Review);
+					const rawData = doc.data();
+					// Explicitly parse and default fields to ensure correct types
+					reviewsData.push({
+						id: doc.id,
+						shop_id: typeof rawData.shop_id === "string" ? rawData.shop_id : "",
+						shop_name:
+							typeof rawData.shop_name === "string" ? rawData.shop_name : "",
+						user_id: typeof rawData.user_id === "string" ? rawData.user_id : "",
+						user_name:
+							typeof rawData.user_name === "string" ? rawData.user_name : "",
+						user_avatar:
+							typeof rawData.user_avatar === "string"
+								? rawData.user_avatar
+								: null,
+						user_role:
+							typeof rawData.user_role === "string"
+								? rawData.user_role
+								: "NORMAL",
+						visit_date: safeToDate(rawData.visit_date),
+						people_count:
+							typeof rawData.people_count === "string"
+								? rawData.people_count
+								: "1",
+						reservation_type:
+							typeof rawData.reservation_type === "string"
+								? rawData.reservation_type
+								: "no_line",
+						wait_time:
+							typeof rawData.wait_time === "string" ? rawData.wait_time : null,
+						ramen_items: safeToRamenItems(rawData.ramen_items),
+						side_menu: safeToSideMenuItems(rawData.side_menu),
+						soup_score:
+							typeof rawData.soup_score === "number" ? rawData.soup_score : 0,
+						noodle_score:
+							typeof rawData.noodle_score === "number"
+								? rawData.noodle_score
+								: 0,
+						topping_score:
+							typeof rawData.topping_score === "number"
+								? rawData.topping_score
+								: 0,
+						appearance_score:
+							typeof rawData.appearance_score === "number"
+								? rawData.appearance_score
+								: 0,
+						experience_score:
+							typeof rawData.experience_score === "number"
+								? rawData.experience_score
+								: 0,
+						value_score:
+							typeof rawData.value_score === "number" ? rawData.value_score : 0,
+						overall_score:
+							typeof rawData.overall_score === "number"
+								? rawData.overall_score
+								: 0,
+						notes: typeof rawData.notes === "string" ? rawData.notes : "",
+						images: Array.isArray(rawData.images) ? rawData.images : [],
+						created_at: safeToDate(rawData.created_at),
+						updated_at: safeToDate(rawData.updated_at),
+						searchTokens: Array.isArray(rawData.searchTokens)
+							? rawData.searchTokens
+							: undefined,
+						source:
+							typeof rawData.source === "string" ? rawData.source : undefined,
+						ig_post_data:
+							rawData.ig_post_data &&
+							typeof rawData.ig_post_data.content === "string"
+								? rawData.ig_post_data
+								: { content: "" },
+						order_method:
+							typeof rawData.order_method === "string" &&
+							(rawData.order_method === "食券機" ||
+								rawData.order_method === "注文制")
+								? rawData.order_method
+								: "食券機",
+						payment_method: Array.isArray(rawData.payment_method)
+							? rawData.payment_method
+							: [],
+						tags: Array.isArray(rawData.tags) ? rawData.tags : [],
+						nearest_station_name:
+							typeof rawData.nearest_station_name === "string"
+								? rawData.nearest_station_name
+								: null,
+						nearest_station_walking_time_minutes:
+							typeof rawData.nearest_station_walking_time_minutes === "number"
+								? rawData.nearest_station_walking_time_minutes
+								: null,
+						nearest_station_distance_meters:
+							typeof rawData.nearest_station_distance_meters === "number"
+								? rawData.nearest_station_distance_meters
+								: null,
+					});
 				}
 
 				setReviews(reviewsData);
@@ -279,7 +386,104 @@ export default function ReviewsPage() {
 				if (!querySnapshot.empty) {
 					const reviewsData: Review[] = [];
 					for (const doc of querySnapshot.docs) {
-						reviewsData.push({ id: doc.id, ...doc.data() } as Review);
+						const rawData = doc.data();
+						// Explicitly parse and default fields to ensure correct types
+						reviewsData.push({
+							id: doc.id,
+							shop_id:
+								typeof rawData.shop_id === "string" ? rawData.shop_id : "",
+							shop_name:
+								typeof rawData.shop_name === "string" ? rawData.shop_name : "",
+							user_id:
+								typeof rawData.user_id === "string" ? rawData.user_id : "",
+							user_name:
+								typeof rawData.user_name === "string" ? rawData.user_name : "",
+							user_avatar:
+								typeof rawData.user_avatar === "string"
+									? rawData.user_avatar
+									: null,
+							user_role:
+								typeof rawData.user_role === "string"
+									? rawData.user_role
+									: "NORMAL",
+							visit_date: safeToDate(rawData.visit_date),
+							people_count:
+								typeof rawData.people_count === "string"
+									? rawData.people_count
+									: "1",
+							reservation_type:
+								typeof rawData.reservation_type === "string"
+									? rawData.reservation_type
+									: "no_line",
+							wait_time:
+								typeof rawData.wait_time === "string"
+									? rawData.wait_time
+									: null,
+							ramen_items: safeToRamenItems(rawData.ramen_items),
+							side_menu: safeToSideMenuItems(rawData.side_menu),
+							soup_score:
+								typeof rawData.soup_score === "number" ? rawData.soup_score : 0,
+							noodle_score:
+								typeof rawData.noodle_score === "number"
+									? rawData.noodle_score
+									: 0,
+							topping_score:
+								typeof rawData.topping_score === "number"
+									? rawData.topping_score
+									: 0,
+							appearance_score:
+								typeof rawData.appearance_score === "number"
+									? rawData.appearance_score
+									: 0,
+							experience_score:
+								typeof rawData.experience_score === "number"
+									? rawData.experience_score
+									: 0,
+							value_score:
+								typeof rawData.value_score === "number"
+									? rawData.value_score
+									: 0,
+							overall_score:
+								typeof rawData.overall_score === "number"
+									? rawData.overall_score
+									: 0,
+							notes: typeof rawData.notes === "string" ? rawData.notes : "",
+							images: Array.isArray(rawData.images) ? rawData.images : [],
+							created_at: safeToDate(rawData.created_at),
+							updated_at: safeToDate(rawData.updated_at),
+							searchTokens: Array.isArray(rawData.searchTokens)
+								? rawData.searchTokens
+								: undefined,
+							source:
+								typeof rawData.source === "string" ? rawData.source : undefined,
+							ig_post_data:
+								rawData.ig_post_data &&
+								typeof rawData.ig_post_data.content === "string"
+									? rawData.ig_post_data
+									: { content: "" },
+							order_method:
+								typeof rawData.order_method === "string" &&
+								(rawData.order_method === "食券機" ||
+									rawData.order_method === "注文制")
+									? rawData.order_method
+									: "食券機",
+							payment_method: Array.isArray(rawData.payment_method)
+								? rawData.payment_method
+								: [],
+							tags: Array.isArray(rawData.tags) ? rawData.tags : [],
+							nearest_station_name:
+								typeof rawData.nearest_station_name === "string"
+									? rawData.nearest_station_name
+									: null,
+							nearest_station_walking_time_minutes:
+								typeof rawData.nearest_station_walking_time_minutes === "number"
+									? rawData.nearest_station_walking_time_minutes
+									: null,
+							nearest_station_distance_meters:
+								typeof rawData.nearest_station_distance_meters === "number"
+									? rawData.nearest_station_distance_meters
+									: null,
+						});
 					}
 
 					setReviews(reviewsData);
@@ -318,7 +522,104 @@ export default function ReviewsPage() {
 				if (!querySnapshot.empty) {
 					const reviewsData: Review[] = [];
 					for (const doc of querySnapshot.docs) {
-						reviewsData.push({ id: doc.id, ...doc.data() } as Review);
+						const rawData = doc.data();
+						// Explicitly parse and default fields to ensure correct types
+						reviewsData.push({
+							id: doc.id,
+							shop_id:
+								typeof rawData.shop_id === "string" ? rawData.shop_id : "",
+							shop_name:
+								typeof rawData.shop_name === "string" ? rawData.shop_name : "",
+							user_id:
+								typeof rawData.user_id === "string" ? rawData.user_id : "",
+							user_name:
+								typeof rawData.user_name === "string" ? rawData.user_name : "",
+							user_avatar:
+								typeof rawData.user_avatar === "string"
+									? rawData.user_avatar
+									: null,
+							user_role:
+								typeof rawData.user_role === "string"
+									? rawData.user_role
+									: "NORMAL",
+							visit_date: safeToDate(rawData.visit_date),
+							people_count:
+								typeof rawData.people_count === "string"
+									? rawData.people_count
+									: "1",
+							reservation_type:
+								typeof rawData.reservation_type === "string"
+									? rawData.reservation_type
+									: "no_line",
+							wait_time:
+								typeof rawData.wait_time === "string"
+									? rawData.wait_time
+									: null,
+							ramen_items: safeToRamenItems(rawData.ramen_items),
+							side_menu: safeToSideMenuItems(rawData.side_menu),
+							soup_score:
+								typeof rawData.soup_score === "number" ? rawData.soup_score : 0,
+							noodle_score:
+								typeof rawData.noodle_score === "number"
+									? rawData.noodle_score
+									: 0,
+							topping_score:
+								typeof rawData.topping_score === "number"
+									? rawData.topping_score
+									: 0,
+							appearance_score:
+								typeof rawData.appearance_score === "number"
+									? rawData.appearance_score
+									: 0,
+							experience_score:
+								typeof rawData.experience_score === "number"
+									? rawData.experience_score
+									: 0,
+							value_score:
+								typeof rawData.value_score === "number"
+									? rawData.value_score
+									: 0,
+							overall_score:
+								typeof rawData.overall_score === "number"
+									? rawData.overall_score
+									: 0,
+							notes: typeof rawData.notes === "string" ? rawData.notes : "",
+							images: Array.isArray(rawData.images) ? rawData.images : [],
+							created_at: safeToDate(rawData.created_at),
+							updated_at: safeToDate(rawData.updated_at),
+							searchTokens: Array.isArray(rawData.searchTokens)
+								? rawData.searchTokens
+								: undefined,
+							source:
+								typeof rawData.source === "string" ? rawData.source : undefined,
+							ig_post_data:
+								rawData.ig_post_data &&
+								typeof rawData.ig_post_data.content === "string"
+									? rawData.ig_post_data
+									: { content: "" },
+							order_method:
+								typeof rawData.order_method === "string" &&
+								(rawData.order_method === "食券機" ||
+									rawData.order_method === "注文制")
+									? rawData.order_method
+									: "食券機",
+							payment_method: Array.isArray(rawData.payment_method)
+								? rawData.payment_method
+								: [],
+							tags: Array.isArray(rawData.tags) ? rawData.tags : [],
+							nearest_station_name:
+								typeof rawData.nearest_station_name === "string"
+									? rawData.nearest_station_name
+									: null,
+							nearest_station_walking_time_minutes:
+								typeof rawData.nearest_station_walking_time_minutes === "number"
+									? rawData.nearest_station_walking_time_minutes
+									: null,
+							nearest_station_distance_meters:
+								typeof rawData.nearest_station_distance_meters === "number"
+									? rawData.nearest_station_distance_meters
+									: null,
+						});
 					}
 
 					setReviews(reviewsData);
@@ -634,15 +935,18 @@ export default function ReviewsPage() {
 											</div>
 										</TableCell>
 										<TableCell>
-											<div className="max-w-[200px] truncate">
-												{review.ramen_items
-													?.map((item) => item.name)
-													.join(", ") || "無品項資料"}
-											</div>
+											{Array.isArray(review.ramen_items) &&
+											review.ramen_items.length > 0 ? (
+												<div className="text-sm">
+													{review.ramen_items[0].name}
+												</div>
+											) : (
+												"無資料"
+											)}
 										</TableCell>
 										<TableCell>
 											{review.visit_date
-												? formatDate(review.visit_date.toDate())
+												? formatDate(review.visit_date)
 												: "未知日期"}
 										</TableCell>
 										<TableCell className="text-right">
@@ -674,9 +978,12 @@ export default function ReviewsPage() {
 											>
 												<AlertDialogTrigger asChild>
 													<Button
-														variant="ghost"
-														className="text-destructive hover:text-destructive/90"
-														onClick={() => setReviewToDelete(review.id)}
+														variant="outline"
+														size="icon"
+														onClick={() => {
+															setShowDeleteConfirm(true);
+															setReviewToDelete(review.id || null);
+														}}
 													>
 														<Trash2 className="h-4 w-4" />
 													</Button>

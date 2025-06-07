@@ -82,6 +82,9 @@ export const reviewSchema = z.object({
 	payment_method: z.array(
 		z.enum(["現金", "QR決済", "交通系IC", "クレジットカード"]),
 	),
+	nearest_station_name: z.string().nullable().optional(),
+	nearest_station_walking_time_minutes: z.number().nullable().optional(),
+	nearest_station_distance_meters: z.number().nullable().optional(),
 });
 
 export type ReviewFormData = z.infer<typeof reviewSchema>;

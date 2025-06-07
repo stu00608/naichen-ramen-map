@@ -100,12 +100,74 @@ interface LegacyReviewData extends Omit<Review, "side_menu" | "ramen_items"> {
 	ramen_item?: string;
 	price?: number;
 	preference?: string;
-	side_menu?: Array<{ name: string; price?: number }>;
+	side_menu?: any; // Allow any type for side_menu in legacy data
 	shop_country?: string;
 	shop_address?: string;
 	shop_google_maps_uri?: string;
 	wait_time?: string;
-	ramen_items?: never; // Explicitly mark as never to avoid confusion
+	nearest_station_name?: string | null;
+	nearest_station_walking_time_minutes?: number | null;
+	nearest_station_distance_meters?: number | null;
+	ramen_items?: any; // Allow any type for ramen_items in legacy data
+}
+
+/**
+ * Recursively removes undefined values from an object.
+ * Useful before sending data to Firestore, which doesn't allow undefined.
+ */
+function removeUndefined<T extends object>(obj: T): T {
+	const newObj: { [key: string]: any } = {};
+	for (const key in obj) {
+		if (obj.hasOwnProperty(key)) {
+			if (obj[key] !== undefined) {
+				// If it's an object and not null, recurse
+				if (typeof obj[key] === "object" && obj[key] !== null) {
+					newObj[key] = removeUndefined(obj[key]);
+				} else {
+					newObj[key] = obj[key];
+				}
+			}
+		}
+	}
+	return newObj as T;
+}
+
+// Helper to safely convert Firestore Timestamp to Date
+function safeToDate(timestamp: any): Date {
+	return timestamp && typeof timestamp.toDate === "function"
+		? timestamp.toDate()
+		: new Date(); // Fallback to a new Date if not a valid Timestamp
+}
+
+// Helper to safely convert raw data to a single RamenItem
+function safeToRamenItem(item: any, defaultCurrency: string): RamenItem {
+	const name = typeof item?.name === "string" ? item.name : "";
+	const price = typeof item?.price === "number" ? item.price : undefined;
+	const currency =
+		typeof item?.currency === "string" ? item.currency : defaultCurrency;
+	const preference =
+		typeof item?.preference === "string" ? item.preference : undefined;
+
+	return {
+		name,
+		price,
+		currency,
+		preference,
+	};
+}
+
+// Helper to safely convert raw data to a single SideMenuItem
+function safeToSideMenuItem(item: any, defaultCurrency: string): SideMenuItem {
+	const name = typeof item?.name === "string" ? item.name : "";
+	const price = typeof item?.price === "number" ? item.price : undefined;
+	const currency =
+		typeof item?.currency === "string" ? item.currency : defaultCurrency;
+
+	return {
+		name,
+		price,
+		currency,
+	};
 }
 
 export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
@@ -258,27 +320,82 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 				}
 
 				// Convert legacy format to new format if needed
-				const ramenItems: RamenItem[] =
-					Array.isArray(data.ramen_items) &&
-					(data.ramen_items as any[]).length > 0
-						? (data.ramen_items as RamenItem[])
-						: data.ramen_item
-							? [
-									{
-										name: data.ramen_item,
-										price: data.price || 0,
-										currency: getDefaultCurrency(data.shop_country || "JP"),
-										preference: data.preference || "",
-									},
-								]
-							: [];
+				const ramenItems: RamenItem[] = [];
 
-				const sideMenuItems: SideMenuItem[] =
-					data.side_menu?.map((item) => ({
-						name: item.name,
-						price: item.price || 0,
-						currency: getDefaultCurrency(data.shop_country || "JP"),
-					})) || [];
+				// Handle ramen_items (plural) - ensure it's an array or convert from object with numeric keys
+				let rawRamenItemsSource: any[] = [];
+				if (Array.isArray(data.ramen_items)) {
+					rawRamenItemsSource = data.ramen_items;
+				} else if (data.ramen_items && typeof data.ramen_items === "object") {
+					// Assume it's an object with numeric keys representing an array
+					for (const key in data.ramen_items) {
+						if (
+							Object.prototype.hasOwnProperty.call(data.ramen_items, key) &&
+							!Number.isNaN(Number(key))
+						) {
+							rawRamenItemsSource.push(data.ramen_items[key]);
+						}
+					}
+				}
+
+				ramenItems.push(
+					...(rawRamenItemsSource as any[])
+						.filter((item) => item && typeof item === "object") // Ensure only objects are mapped
+						.map((item: any) => {
+							const ramenItem = safeToRamenItem(
+								item,
+								getDefaultCurrency(data.shop_country || "JP"),
+							);
+							return ramenItem;
+						}),
+				);
+
+				// Handle singular ramen_item for legacy data
+				if (data.ramen_item) {
+					ramenItems.push(
+						safeToRamenItem(
+							{
+								name: data.ramen_item,
+								price: typeof data.price === "number" ? data.price : undefined,
+								preference:
+									typeof data.preference === "string"
+										? data.preference
+										: undefined,
+							},
+							getDefaultCurrency(data.shop_country || "JP"),
+						),
+					);
+				}
+
+				const sideMenuItems: SideMenuItem[] = [];
+
+				// Handle side_menu - ensure it's an array or convert from object with numeric keys
+				let rawSideMenuSource: any[] = [];
+				if (Array.isArray(data.side_menu)) {
+					rawSideMenuSource = data.side_menu;
+				} else if (data.side_menu && typeof data.side_menu === "object") {
+					// Assume it's an object with numeric keys representing an array
+					for (const key in data.side_menu) {
+						if (
+							Object.prototype.hasOwnProperty.call(data.side_menu, key) &&
+							!Number.isNaN(Number(key))
+						) {
+							rawSideMenuSource.push(data.side_menu[key]);
+						}
+					}
+				}
+
+				sideMenuItems.push(
+					...(rawSideMenuSource as any[])
+						.filter((item) => item && typeof item === "object") // Ensure only objects are mapped
+						.map((item: any) => {
+							const sideMenuItem = safeToSideMenuItem(
+								item,
+								getDefaultCurrency(data.shop_country || "JP"),
+							);
+							return sideMenuItem;
+						}),
+				);
 
 				// Reset form with fetched data
 				const formData: ReviewFormData = {
@@ -288,13 +405,21 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 					user_name: data.user_name,
 					user_avatar: data.user_avatar,
 					user_role: data.user_role,
-					visit_date: data.visit_date?.toDate() || new Date(),
+					visit_date: safeToDate(data.visit_date),
 					people_count: data.people_count,
 					reservation_type: data.reservation_type,
 					ramen_items: ramenItems,
 					side_menu: sideMenuItems,
-					tags: (data as any).tags || [],
-					wait_time: WAIT_TIME_OPTIONS.find(option => option.value === data.wait_time)?.value as ReviewFormData['wait_time'],
+					tags: Array.isArray((data as any).tags) ? (data as any).tags : [],
+					wait_time: WAIT_TIME_OPTIONS.find(
+						(option) => option.value === data.wait_time,
+					)?.value as ReviewFormData["wait_time"],
+					// Ensure nearest station fields are null if not present in legacy data
+					nearest_station_name: (data as any).nearest_station_name || null,
+					nearest_station_walking_time_minutes:
+						(data as any).nearest_station_walking_time_minutes || null,
+					nearest_station_distance_meters:
+						(data as any).nearest_station_distance_meters || null,
 					soup_score: data.soup_score,
 					noodle_score: data.noodle_score,
 					topping_score: data.topping_score,
@@ -303,9 +428,11 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 					value_score: data.value_score,
 					overall_score: data.overall_score,
 					notes: data.notes || "",
-					images: data.images || [],
+					images: Array.isArray(data.images) ? data.images : [],
 					order_method: (data as any).order_method || ORDER_METHOD_OPTIONS[0],
-					payment_method: (data as any).payment_method || [],
+					payment_method: Array.isArray((data as any).payment_method)
+						? (data as any).payment_method
+						: [],
 				};
 
 				reset(formData);
@@ -319,6 +446,24 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 						address: data.shop_address || "",
 						googleMapsUri: data.shop_google_maps_uri || "",
 					});
+				}
+
+				// Initialize nearest station data if available from review
+				if (data.nearest_station_name) {
+					setNearestStations([
+						{
+							name: data.nearest_station_name,
+							walking_time_minutes:
+								data.nearest_station_walking_time_minutes || 0,
+							distance_meters: data.nearest_station_distance_meters || 0,
+							walking_time_text: `${data.nearest_station_walking_time_minutes || 0}分`,
+							distance_text: `${data.nearest_station_distance_meters || 0}m`,
+						},
+					]);
+					setSelectedStationIdx(0);
+				} else {
+					setNearestStations([]);
+					setSelectedStationIdx(0);
 				}
 
 				setDefaultCurrency(getDefaultCurrency(data.shop_country || "JP"));
@@ -537,33 +682,55 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 	// Handle form submission
 	const onSubmit = async (data: ReviewFormData) => {
 		try {
+			const formattedData = formatFormDataForSubmission(data);
+
 			// Include selected nearest station data in submission
 			const selectedStation = nearestStations[selectedStationIdx];
-			const submitData = {
-				...data,
+
+			// Data for Firestore submission (using formattedData)
+			const submitDataForFirestore = {
+				...formattedData,
 				updated_at: Timestamp.now(),
+				nearest_station_name: selectedStation?.name
+					? selectedStation.name
+					: null,
+				nearest_station_walking_time_minutes:
+					selectedStation?.walking_time_minutes
+						? selectedStation.walking_time_minutes
+						: null,
+				nearest_station_distance_meters: selectedStation?.distance_meters
+					? selectedStation.distance_meters
+					: null,
+			};
+
+			// Data for IG post content generation (using original 'data' for Date objects)
+			const igContentReviewData = {
+				...data, // `data` has visit_date as Date
 				nearest_station_name: selectedStation?.name,
 				nearest_station_walking_time_minutes:
 					selectedStation?.walking_time_minutes,
 				nearest_station_distance_meters: selectedStation?.distance_meters,
 			};
 
-			// Fetch shop data for IG post
-			const shopDataForIG = submitData.shop_id
-				? await fetchShopData(submitData.shop_id)
+			// Fetch shop data for IG post (use original data's shop_id)
+			const shopDataForIG = igContentReviewData.shop_id
+				? await fetchShopData(igContentReviewData.shop_id)
 				: undefined;
 			const shopForIG = shopDataForIG || undefined;
 
 			// Generate IG post content
-			const igContent = generateIgPostContent(submitData, shopForIG);
+			const igContent = generateIgPostContent(igContentReviewData, shopForIG);
 
 			// Add update timestamp and ig_post_data
 			const finalSubmitData = {
-				...submitData,
+				...submitDataForFirestore,
 				ig_post_data: { content: igContent },
 			};
 
-			const result = await updateDocument(reviewId, finalSubmitData);
+			// Clean up undefined values before sending to Firestore
+			const cleanedData = removeUndefined(finalSubmitData);
+
+			const result = await updateDocument(reviewId, cleanedData);
 			if (result) {
 				toast.success("評價已成功更新！");
 				router.push("/dashboard/reviews");
@@ -1024,7 +1191,10 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 														</FormControl>
 														<SelectContent>
 															{WAIT_TIME_OPTIONS.map((option) => (
-																<SelectItem key={option.value} value={option.value}>
+																<SelectItem
+																	key={option.value}
+																	value={option.value}
+																>
 																	{option.label}
 																</SelectItem>
 															))}
