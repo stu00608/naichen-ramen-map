@@ -4,7 +4,7 @@ import type { Review } from "@/types";
 import type { StationError } from "@/types";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { RAMEN_HASHTAGS, WAIT_TIME_OPTIONS } from "@/constants";
+import { RAMEN_HASHTAGS, WAIT_TIME_OPTIONS, REGIONS } from "@/constants";
 
 export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
@@ -73,6 +73,29 @@ export function generateSearchTokens(text: string): string[] {
 	return Array.from(tokens);
 }
 
+// Helper to generate prefecture-specific tags
+function generatePrefectureTags(address: string): string {
+	const japanesePrefectures = REGIONS.JP;
+	const taiwaneseCities = REGIONS.TW;
+	const baseTags = ["ラーメン", "美食", "拉麵", "旅遊", "自由行"];
+
+	for (const prefecture of japanesePrefectures) {
+		if (address.includes(prefecture)) {
+			const tags = baseTags.map(tag => `#${prefecture.replace(/都|道|府|県/g, "")}${tag}`);
+			return tags.join(" ");
+		}
+	}
+
+	for (const city of taiwaneseCities) {
+		if (address.includes(city)) {
+			const tags = baseTags.map(tag => `#${city.replace(/市|縣/g, "")}${tag}`);
+			return tags.join(" ");
+		}
+	}
+
+	return "";
+}
+
 /**
  * Prepares shop data for search functionality
  * @param name Shop name
@@ -111,12 +134,16 @@ export function generateIgPostContent(
 		);
 	// Helper: remove whitespace
 	const removeWhitespace = (str: string) => str.replace(/\s+/g, "");
-	// Title from notes
-	let title = "";
+	// Title and Content from notes
+	let title = "";	
+	let notesBlock = review.notes || "";
 	if (review.notes) {
 		const firstLine = review.notes.split("\n")[0];
 		// remove the `#` and do strip, and make remain string as title
-		if (firstLine.startsWith("#")) title = firstLine.slice(1).trim();
+		if (firstLine.startsWith("#")) {
+			title = firstLine.slice(1).trim();
+			notesBlock = notesBlock.split("\n").slice(1).join("\n");
+		}
 	}
 	// Shop name hashtag
 	const shopTag = review.shop_name
@@ -148,15 +175,16 @@ export function generateIgPostContent(
 		review.nearest_station_name &&
 		review.nearest_station_walking_time_minutes !== undefined &&
 		review.nearest_station_distance_meters !== undefined
-			? `📍${review.nearest_station_name}徒歩${review.nearest_station_walking_time_minutes}分（${review.nearest_station_distance_meters}m）`
+			? `📍${review.nearest_station_name}徒歩${review.nearest_station_walking_time_minutes}分`
 			: "";
-	// Notes (skip first line if it\'s a title)
-	let notesBlock = review.notes || "";
-	if (title && notesBlock.startsWith(title)) {
-		notesBlock = notesBlock.split("\n").slice(1).join("\n");
-	}
+
 	// Address
 	const address = shop?.address || "";
+	let prefectureTags = "";
+	if (address) {
+		prefectureTags = generatePrefectureTags(address);
+	}
+
 	// Date/time
 	const visitDate = review.visit_date;
 	const dateStr = visitDate
@@ -218,5 +246,5 @@ export function generateIgPostContent(
 	finalTags = finalTags.trim();
 
 	// Compose
-	return `${title ? `${title}\n` : ""}${shopTag}\n${stationLine ? `${stationLine}\n` : ""}\n${ramenLine ? `${ramenLine}\n` : ""}${sideLine ? `${sideLine}\n` : ""}${orderLine ? `${orderLine}\n` : ""}${prefLine ? `${prefLine}\n` : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n${address ? `🗾：${address}\n` : ""}🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #ラーメン #ラーメン好き #奶辰吃拉麵 #日本拉麵 #日本美食 #日本旅遊 ${finalTags}`;
+	return `${title ? `${title}\n` : ""}${shopTag}\n${stationLine ? `${stationLine}\n` : ""}\n${ramenLine ? `${ramenLine}\n` : ""}${sideLine ? `${sideLine}\n` : ""}${orderLine ? `${orderLine}\n` : ""}${prefLine ? `${prefLine}\n` : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n${address ? `🗾：${address}\n` : ""}🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #ラーメン #ラーメン好き #奶辰吃拉麵 #日本拉麵 #日本美食 #日本旅遊 ${prefectureTags ? `${prefectureTags} ` : ""}${finalTags}`;
 }
