@@ -45,6 +45,7 @@ import {
 	ORDER_METHOD_OPTIONS,
 	PAYMENT_METHOD_OPTIONS,
 	RESERVATION_TYPES,
+	WAIT_TIME_OPTIONS,
 } from "@/constants";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -829,15 +830,23 @@ export default function NewReviewPage() {
 											render={({ field }) => (
 												<FormItem>
 													<FormLabel>等待時間</FormLabel>
-													<FormControl>
-														<Input
-															type="time"
-															onChange={field.onChange}
-															value={field.value}
-															step="60"
-														/>
-													</FormControl>
-													<FormDescription>小時:分鐘</FormDescription>
+													<Select
+														onValueChange={field.onChange}
+														value={field.value}
+													>
+														<FormControl>
+															<SelectTrigger className="w-full h-10">
+																<SelectValue placeholder="選擇等待時間" />
+															</SelectTrigger>
+														</FormControl>
+														<SelectContent>
+															{WAIT_TIME_OPTIONS.map((option) => (
+																<SelectItem key={option.value} value={option.value}>
+																	{option.label}
+																</SelectItem>
+															))}
+														</SelectContent>
+													</Select>
 													<FormMessage />
 												</FormItem>
 											)}

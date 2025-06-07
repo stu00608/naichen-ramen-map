@@ -140,3 +140,11 @@ export const PAYMENT_METHOD_OPTIONS = [
 	"交通系IC",
 	"クレジットカード",
 ] as const;
+
+export const WAIT_TIME_OPTIONS = [
+	{ label: "10分鐘內", value: "<10min" },
+	{ label: "30分鐘內", value: "<30min" },
+	{ label: "1小時內", value: "<1hr" },
+	{ label: "2小時內", value: "<2hr" },
+	{ label: "2小時以上", value: ">2hr" },
+];

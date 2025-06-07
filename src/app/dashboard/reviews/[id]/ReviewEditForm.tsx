@@ -56,6 +56,7 @@ import {
 	ORDER_METHOD_OPTIONS,
 	PAYMENT_METHOD_OPTIONS,
 	RESERVATION_TYPES,
+	WAIT_TIME_OPTIONS,
 } from "@/constants";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -293,7 +294,7 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 					ramen_items: ramenItems,
 					side_menu: sideMenuItems,
 					tags: (data as any).tags || [],
-					wait_time: data.wait_time || "",
+					wait_time: WAIT_TIME_OPTIONS.find(option => option.value === data.wait_time)?.value as ReviewFormData['wait_time'],
 					soup_score: data.soup_score,
 					noodle_score: data.noodle_score,
 					topping_score: data.topping_score,
@@ -1012,15 +1013,23 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 											render={({ field }) => (
 												<FormItem>
 													<FormLabel>等待時間</FormLabel>
-													<FormControl>
-														<Input
-															type="time"
-															onChange={field.onChange}
-															value={field.value || ""}
-															step="60"
-														/>
-													</FormControl>
-													<FormDescription>小時:分鐘</FormDescription>
+													<Select
+														onValueChange={field.onChange}
+														value={field.value}
+													>
+														<FormControl>
+															<SelectTrigger className="w-full h-10">
+																<SelectValue placeholder="選擇等待時間" />
+															</SelectTrigger>
+														</FormControl>
+														<SelectContent>
+															{WAIT_TIME_OPTIONS.map((option) => (
+																<SelectItem key={option.value} value={option.value}>
+																	{option.label}
+																</SelectItem>
+															))}
+														</SelectContent>
+													</Select>
 													<FormMessage />
 												</FormItem>
 											)}
