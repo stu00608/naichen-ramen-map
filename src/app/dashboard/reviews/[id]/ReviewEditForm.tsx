@@ -134,9 +134,14 @@ function removeUndefined<T extends object>(obj: T): T {
 
 // Helper to safely convert Firestore Timestamp to Date
 function safeToDate(timestamp: any): Date {
+	if (timestamp instanceof Date) {
+		return timestamp; // Already a Date object
+	}
 	return timestamp && typeof timestamp.toDate === "function"
 		? timestamp.toDate()
-		: new Date(); // Fallback to a new Date if not a valid Timestamp
+		: timestamp && typeof timestamp === "string"
+		? new Date(timestamp) // Attempt to parse string to Date
+		: new Date(); // Fallback to a new Date if not a valid Timestamp or string
 }
 
 // Helper to safely convert raw data to a single RamenItem
@@ -168,6 +173,45 @@ function safeToSideMenuItem(item: any, defaultCurrency: string): SideMenuItem {
 		price,
 		currency,
 	};
+}
+
+// Helper to safely convert raw data to an array of tags
+function safeToTagArray(data: any): string[] {
+	if (Array.isArray(data)) {
+		return data.filter((item) => typeof item === "string") as string[];
+	} else if (data && typeof data === "object") {
+		// Assume it's an object with numeric keys representing an array
+		const result: string[] = [];
+		for (const key in data) {
+			if (Object.prototype.hasOwnProperty.call(data, key) && !Number.isNaN(Number(key))) {
+				if (typeof data[key] === "string") {
+					result.push(data[key]);
+				}
+			}
+		}
+		return result;
+	}
+	return [];
+}
+
+// Helper to safely convert raw data to an array of payment methods
+function safeToPaymentMethodArray(data: any): (typeof PAYMENT_METHOD_OPTIONS)[number][] {
+	const validPaymentMethods = new Set(PAYMENT_METHOD_OPTIONS);
+	if (Array.isArray(data)) {
+		return data.filter((item) => typeof item === "string" && validPaymentMethods.has(item as (typeof PAYMENT_METHOD_OPTIONS)[number])) as (typeof PAYMENT_METHOD_OPTIONS)[number][];
+	} else if (data && typeof data === "object") {
+		// Assume it's an object with numeric keys representing an array
+		const result: (typeof PAYMENT_METHOD_OPTIONS)[number][] = [];
+		for (const key in data) {
+			if (Object.prototype.hasOwnProperty.call(data, key) && !Number.isNaN(Number(key))) {
+				if (typeof data[key] === "string" && validPaymentMethods.has(data[key] as (typeof PAYMENT_METHOD_OPTIONS)[number])) {
+					result.push(data[key] as (typeof PAYMENT_METHOD_OPTIONS)[number]);
+				}
+			}
+		}
+		return result;
+	}
+	return [];
 }
 
 export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
@@ -410,7 +454,7 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 					reservation_type: data.reservation_type,
 					ramen_items: ramenItems,
 					side_menu: sideMenuItems,
-					tags: Array.isArray((data as any).tags) ? (data as any).tags : [],
+					tags: safeToTagArray(data.tags),
 					wait_time: WAIT_TIME_OPTIONS.find(
 						(option) => option.value === data.wait_time,
 					)?.value as ReviewFormData["wait_time"],
@@ -430,9 +474,7 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 					notes: data.notes || "",
 					images: Array.isArray(data.images) ? data.images : [],
 					order_method: (data as any).order_method || ORDER_METHOD_OPTIONS[0],
-					payment_method: Array.isArray((data as any).payment_method)
-						? (data as any).payment_method
-						: [],
+					payment_method: safeToPaymentMethodArray(data.payment_method),
 				};
 
 				reset(formData);
