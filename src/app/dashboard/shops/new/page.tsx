@@ -56,7 +56,9 @@ interface DaySchedule {
 	isClosed: boolean;
 }
 
-type StationError = string | { message?: string; stage?: string; googleStatus?: string; error?: any };
+type StationError =
+	| string
+	| { message?: string; stage?: string; googleStatus?: string; error?: any };
 
 export default function NewShopPage() {
 	const { addDocument, loading, error, checkDocumentExists } =
@@ -398,6 +400,7 @@ export default function NewShopPage() {
 						latitude: place.location.latitude,
 						longitude: place.location.longitude,
 						country: countryValue,
+						destinationPlaceId: place.id,
 					}),
 				});
 				if (!res.ok) {
@@ -410,7 +413,10 @@ export default function NewShopPage() {
 				setNearestStations(data.stations || []);
 				setSelectedStationIdx(0);
 			} catch (err: any) {
-				setStationError({ message: err.message || "找不到最近車站", stage: "fetch-catch" });
+				setStationError({
+					message: err.message || "找不到最近車站",
+					stage: "fetch-catch",
+				});
 			} finally {
 				setStationLoading(false);
 			}
@@ -633,46 +639,93 @@ export default function NewShopPage() {
 										)}
 										{stationError && !nearestStations.length && (
 											<div className="text-destructive text-sm mt-1">
-												{typeof stationError === 'string' ? stationError : stationError.message}
-												{typeof stationError === 'object' && stationError.stage && (
-													<span className="ml-2">[stage: {stationError.stage}]</span>
-												)}
-												{typeof stationError === 'object' && stationError.googleStatus && (
-													<span className="ml-2">[google: {stationError.googleStatus}]</span>
-												)}
-												{typeof stationError === 'object' && stationError.error && (
-													<span className="ml-2">[error: {JSON.stringify(stationError.error)}]</span>
-												)}
+												{typeof stationError === "string"
+													? stationError
+													: stationError.message}
+												{typeof stationError === "object" &&
+													stationError.stage && (
+														<span className="ml-2">
+															[stage: {stationError.stage}]
+														</span>
+													)}
+												{typeof stationError === "object" &&
+													stationError.googleStatus && (
+														<span className="ml-2">
+															[google: {stationError.googleStatus}]
+														</span>
+													)}
+												{typeof stationError === "object" &&
+													stationError.error && (
+														<span className="ml-2">
+															[error: {JSON.stringify(stationError.error)}]
+														</span>
+													)}
 											</div>
 										)}
-										{nearestStations.length > 0 && !stationLoading && !stationError && (
-											<div className="rounded-lg border bg-card p-3 flex flex-col gap-2 shadow-sm">
-												<div className="font-semibold text-base mb-1">🚉 最近車站 (步行20分鐘內)</div>
-												<div className="flex flex-col gap-1">
-													{nearestStations.map((station, idx) => (
-														<label key={idx} className="flex items-center gap-2 cursor-pointer">
-															<input
-																type="radio"
-																name="nearestStation"
-																checked={selectedStationIdx === idx}
-																onChange={() => setSelectedStationIdx(idx)}
-																className="accent-primary"
-															/>
-															<span className="font-medium text-primary">{station.name}</span>
-															<span className="text-xs text-muted-foreground">步行 {station.walking_time_text} ({station.walking_time_minutes} 分)・{station.distance_text} ({station.distance_meters} 公尺)</span>
-														</label>
-													))}
-												</div>
-												{/* Show selected station info in modern style */}
-												<div className="mt-2 p-2 rounded border bg-muted-foreground/10">
-													<div className="font-semibold">已選擇：{nearestStations[selectedStationIdx]?.name}</div>
-													<div className="text-sm text-muted-foreground">
-														步行 {nearestStations[selectedStationIdx]?.walking_time_text} ({nearestStations[selectedStationIdx]?.walking_time_minutes} 分)・
-														距離 {nearestStations[selectedStationIdx]?.distance_text} ({nearestStations[selectedStationIdx]?.distance_meters} 公尺)
+										{nearestStations.length > 0 &&
+											!stationLoading &&
+											!stationError && (
+												<div className="rounded-lg border bg-card p-3 flex flex-col gap-2 shadow-sm">
+													<div className="font-semibold text-base mb-1">
+														🚉 最近車站 (步行20分鐘內)
+													</div>
+													<div className="flex flex-col gap-1">
+														{nearestStations.map((station, idx) => (
+															<label
+																key={idx}
+																className="flex items-center gap-2 cursor-pointer"
+															>
+																<input
+																	type="radio"
+																	name="nearestStation"
+																	checked={selectedStationIdx === idx}
+																	onChange={() => setSelectedStationIdx(idx)}
+																	className="accent-primary"
+																/>
+																<span className="font-medium text-primary">
+																	{station.name}
+																</span>
+																<span className="text-xs text-muted-foreground">
+																	步行 {station.walking_time_text} (
+																	{station.walking_time_minutes} 分)・
+																	{station.distance_text} (
+																	{station.distance_meters} 公尺)
+																</span>
+															</label>
+														))}
+													</div>
+													{/* Show selected station info in modern style */}
+													<div className="mt-2 p-2 rounded border bg-muted-foreground/10">
+														<div className="font-semibold">
+															已選擇：
+															{nearestStations[selectedStationIdx]?.name}
+														</div>
+														<div className="text-sm text-muted-foreground">
+															步行{" "}
+															{
+																nearestStations[selectedStationIdx]
+																	?.walking_time_text
+															}{" "}
+															(
+															{
+																nearestStations[selectedStationIdx]
+																	?.walking_time_minutes
+															}{" "}
+															分)・ 距離{" "}
+															{
+																nearestStations[selectedStationIdx]
+																	?.distance_text
+															}{" "}
+															(
+															{
+																nearestStations[selectedStationIdx]
+																	?.distance_meters
+															}{" "}
+															公尺)
+														</div>
 													</div>
 												</div>
-											</div>
-										)}
+											)}
 									</div>
 									{/* End Nearest Station UI */}
 									{errors.name && (
