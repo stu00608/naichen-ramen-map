@@ -82,79 +82,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { safeToDate, safeToRamenItems, safeToSideMenuItems } from "@/lib/utils"
 
-// Helper to safely convert Firestore Timestamp to Date
-function safeToDate(timestamp: any): Date {
-	// If it's a Firestore Timestamp object, convert it
-	if (timestamp && typeof timestamp.toDate === "function") {
-		return timestamp.toDate();
-	}
-	// If it's a plain object with seconds and nanoseconds, convert it
-	if (
-		timestamp &&
-		typeof timestamp === "object" &&
-		typeof timestamp.seconds === "number" &&
-		typeof timestamp.nanoseconds === "number"
-	) {
-		return new Date(timestamp.seconds * 1000 + timestamp.nanoseconds / 1000000);
-	}
-	// Fallback to a new Date if not a valid Timestamp or object
-	return new Date();
-}
-
-// Helper to safely convert raw data to RamenItem array
-function safeToRamenItems(items: any): RamenItem[] {
-	let processedItems: any[] = [];
-	if (Array.isArray(items)) {
-		processedItems = items;
-	} else if (items && typeof items === "object") {
-		// Assume it's an object with numeric keys representing an array
-		for (const key in items) {
-			if (
-				Object.prototype.hasOwnProperty.call(items, key) &&
-				!Number.isNaN(Number(key))
-			) {
-				processedItems.push(items[key]);
-			}
-		}
-	}
-
-	return (processedItems as any[])
-		.filter((item) => item && typeof item === "object")
-		.map((item: any) => ({
-			name: typeof item.name === "string" ? item.name : "",
-			price: typeof item.price === "number" ? item.price : undefined,
-			currency: typeof item.currency === "string" ? item.currency : "JPY", // Default currency
-			preference:
-				typeof item.preference === "string" ? item.preference : undefined, // Ensure preference exists
-		}));
-}
-
-// Helper to safely convert raw data to SideMenuItem array
-function safeToSideMenuItems(items: any): SideMenuItem[] {
-	let processedItems: any[] = [];
-	if (Array.isArray(items)) {
-		processedItems = items;
-	} else if (items && typeof items === "object") {
-		// Assume it's an object with numeric keys representing an array
-		for (const key in items) {
-			if (
-				Object.prototype.hasOwnProperty.call(items, key) &&
-				!Number.isNaN(Number(key))
-			) {
-				processedItems.push(items[key]);
-			}
-		}
-	}
-
-	return (processedItems as any[])
-		.filter((item) => item && typeof item === "object")
-		.map((item: any) => ({
-			name: typeof item.name === "string" ? item.name : "",
-			price: typeof item.price === "number" ? item.price : undefined,
-			currency: typeof item.currency === "string" ? item.currency : "JPY", // Default currency
-		}));
-}
 
 export default function ReviewsPage() {
 	const router = useRouter();

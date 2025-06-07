@@ -91,6 +91,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { safeToDate } from "@/lib/utils"
 
 interface ReviewEditFormProps {
 	reviewId: string;
@@ -130,18 +131,6 @@ function removeUndefined<T extends object>(obj: T): T {
 		}
 	}
 	return newObj as T;
-}
-
-// Helper to safely convert Firestore Timestamp to Date
-function safeToDate(timestamp: any): Date {
-	if (timestamp instanceof Date) {
-		return timestamp; // Already a Date object
-	}
-	return timestamp && typeof timestamp.toDate === "function"
-		? timestamp.toDate()
-		: timestamp && typeof timestamp === "string"
-		? new Date(timestamp) // Attempt to parse string to Date
-		: new Date(); // Fallback to a new Date if not a valid Timestamp or string
 }
 
 // Helper to safely convert raw data to a single RamenItem

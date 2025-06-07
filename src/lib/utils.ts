@@ -1,6 +1,6 @@
 import type { ReviewFormData } from "@/hooks/forms/useReviewFormUtils";
 import type { ShopData } from "@/hooks/forms/useReviewFormUtils";
-import type { Review } from "@/types";
+import type { RamenItem, Review, SideMenuItem } from "@/types";
 import type { StationError } from "@/types";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -264,4 +264,78 @@ export function generateIgPostContent(
 
 	// Compose
 	return `${title ? `${title}\n` : ""}${shopTag}\n${stationLine ? `${stationLine}\n` : ""}\n${ramenLine ? `${ramenLine}\n` : ""}${sideLine ? `${sideLine}\n` : ""}${orderLine ? `${orderLine}\n` : ""}${prefLine ? `${prefLine}\n` : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n${address ? `🗾：${address}\n` : ""}🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #ラーメン #ラーメン好き #奶辰吃拉麵 #日本拉麵 #日本美食 #日本旅遊 ${prefectureTags ? `${prefectureTags}` : ""} ${finalTags}`;
+}
+
+export function safeToDate(timestamp: any): Date {
+	// If it's a Firestore Timestamp object, convert it
+	console.log(timestamp);
+	if (timestamp && typeof timestamp.toDate === "function") {
+		return timestamp.toDate();
+	}
+	// If it's a plain object with seconds and nanoseconds, convert it
+	if (
+		timestamp &&
+		typeof timestamp === "object" &&
+		typeof timestamp.seconds === "number" &&
+		typeof timestamp.nanoseconds === "number"
+	) {
+		return new Date(timestamp.seconds * 1000 + timestamp.nanoseconds / 1000000);
+	}
+	// Fallback to a new Date if not a valid Timestamp or object
+	return new Date();
+}
+
+
+// Helper to safely convert raw data to RamenItem array
+export function safeToRamenItems(items: any): RamenItem[] {
+	let processedItems: any[] = [];
+	if (Array.isArray(items)) {
+		processedItems = items;
+	} else if (items && typeof items === "object") {
+		// Assume it's an object with numeric keys representing an array
+		for (const key in items) {
+			if (
+				Object.prototype.hasOwnProperty.call(items, key) &&
+				!Number.isNaN(Number(key))
+			) {
+				processedItems.push(items[key]);
+			}
+		}
+	}
+
+	return (processedItems as any[])
+		.filter((item) => item && typeof item === "object")
+		.map((item: any) => ({
+			name: typeof item.name === "string" ? item.name : "",
+			price: typeof item.price === "number" ? item.price : undefined,
+			currency: typeof item.currency === "string" ? item.currency : "JPY", // Default currency
+			preference:
+				typeof item.preference === "string" ? item.preference : undefined, // Ensure preference exists
+		}));
+}
+
+// Helper to safely convert raw data to SideMenuItem array
+export function safeToSideMenuItems(items: any): SideMenuItem[] {
+	let processedItems: any[] = [];
+	if (Array.isArray(items)) {
+		processedItems = items;
+	} else if (items && typeof items === "object") {
+		// Assume it's an object with numeric keys representing an array
+		for (const key in items) {
+			if (
+				Object.prototype.hasOwnProperty.call(items, key) &&
+				!Number.isNaN(Number(key))
+			) {
+				processedItems.push(items[key]);
+			}
+		}
+	}
+
+	return (processedItems as any[])
+		.filter((item) => item && typeof item === "object")
+		.map((item: any) => ({
+			name: typeof item.name === "string" ? item.name : "",
+			price: typeof item.price === "number" ? item.price : undefined,
+			currency: typeof item.currency === "string" ? item.currency : "JPY", // Default currency
+		}));
 }
