@@ -430,12 +430,11 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 							return;
 						}
 
-
 						const res = await fetch("/api/places/nearest-station", {
 							method: "POST",
-							headers: { 
+							headers: {
 								"Content-Type": "application/json",
-								Authorization: `Bearer ${idToken}`
+								Authorization: `Bearer ${idToken}`,
 							},
 							body: JSON.stringify({
 								latitude: shopData.location.latitude,

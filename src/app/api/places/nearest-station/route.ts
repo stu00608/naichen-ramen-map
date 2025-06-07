@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
-import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
 	try {
@@ -40,7 +40,8 @@ export async function POST(request: Request) {
 
 		console.log("Decoded token:", decodedToken);
 
-		const { latitude, longitude, country, destinationPlaceId } = await request.json();
+		const { latitude, longitude, country, destinationPlaceId } =
+			await request.json();
 		if (typeof latitude !== "number" || typeof longitude !== "number") {
 			return NextResponse.json(
 				{ message: "Missing or invalid coordinates", stage: "input" },
@@ -92,7 +93,9 @@ export async function POST(request: Request) {
 		for (const station of candidateStations) {
 			const stationLocation = station.geometry.location;
 			// 2. Get walking distance and time using Google Directions API
-			const destination = destinationPlaceId ? `place_id:${destinationPlaceId}` : `${latitude},${longitude}`;
+			const destination = destinationPlaceId
+				? `place_id:${destinationPlaceId}`
+				: `${latitude},${longitude}`;
 			const directionsUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=place_id:${station.place_id}&destination=${destination}&mode=walking&key=${apiKey}`;
 			const directionsRes = await fetch(directionsUrl);
 			const directionsData = await directionsRes.json();
@@ -134,7 +137,10 @@ export async function POST(request: Request) {
 		console.error("Nearest Station API error:", error);
 		return NextResponse.json(
 			{
-				message: error instanceof Error ? error.message : "Failed to find nearest station",
+				message:
+					error instanceof Error
+						? error.message
+						: "Failed to find nearest station",
 				stage: "catch",
 				error: error,
 			},

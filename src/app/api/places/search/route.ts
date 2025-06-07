@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
-import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
 	try {

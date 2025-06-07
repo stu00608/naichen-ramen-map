@@ -28,6 +28,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { COUNTRIES, DAYS_OF_WEEK, RAMEN_TYPES, REGIONS } from "@/constants";
+import { useAuth } from "@/contexts/auth-context";
 import { useGooglePlaceIdValidation } from "@/hooks/forms/useGooglePlaceIdValidation";
 import {
 	type ShopFormData,
@@ -36,6 +37,7 @@ import {
 } from "@/hooks/forms/useShopFormUtils";
 import { useFirestore } from "@/hooks/useFirestore";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
+import { auth } from "@/lib/firebase";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { GeoPoint, Timestamp } from "firebase/firestore";
 import { Clock3, Search } from "lucide-react";
@@ -45,8 +47,6 @@ import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { auth } from "@/lib/firebase";
-import { useAuth } from "@/contexts/auth-context";
 
 interface BusinessHourPeriod {
 	open: string;
@@ -423,7 +423,7 @@ export default function NewShopPage() {
 
 				const res = await fetch("/api/places/nearest-station", {
 					method: "POST",
-					headers: { 
+					headers: {
 						"Content-Type": "application/json",
 						Authorization: `Bearer ${idToken}`,
 					},

@@ -293,7 +293,7 @@ export default function NewReviewPage() {
 					setNearestStations([]);
 					setSelectedStationIdx(0);
 					setStationError(null);
-					try {				
+					try {
 						if (!user) {
 							setIsSearching(false);
 							return;
@@ -308,7 +308,7 @@ export default function NewReviewPage() {
 
 						const res = await fetch("/api/places/nearest-station", {
 							method: "POST",
-							headers: { 
+							headers: {
 								"Content-Type": "application/json",
 								Authorization: `Bearer ${idToken}`,
 							},

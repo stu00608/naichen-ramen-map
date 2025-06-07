@@ -39,6 +39,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { COUNTRIES, DAYS_OF_WEEK, RAMEN_TYPES, REGIONS } from "@/constants";
+import { useAuth } from "@/contexts/auth-context";
 import { useGooglePlaceIdValidation } from "@/hooks/forms/useGooglePlaceIdValidation";
 import {
 	type ShopFormData,
@@ -47,6 +48,7 @@ import {
 } from "@/hooks/forms/useShopFormUtils";
 import { useFirestore } from "@/hooks/useFirestore";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
+import { auth } from "@/lib/firebase";
 import type { Shop } from "@/types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { GeoPoint, Timestamp } from "firebase/firestore";
@@ -56,8 +58,6 @@ import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { auth } from "@/lib/firebase";
-import { useAuth } from "@/contexts/auth-context";
 
 type StationError =
 	| string
@@ -435,10 +435,10 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 
 				const res = await fetch("/api/places/nearest-station", {
 					method: "POST",
-					headers: { 
+					headers: {
 						"Content-Type": "application/json",
 						Authorization: `Bearer ${idToken}`,
-					 },
+					},
 					body: JSON.stringify({
 						latitude: place.location.latitude,
 						longitude: place.location.longitude,
