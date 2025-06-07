@@ -42,7 +42,13 @@ export const reviewSchema = z.object({
 	visit_date: z.date({ required_error: "造訪日期必填" }),
 	people_count: z.string().min(1, { message: "用餐人數必填" }),
 	reservation_type: z.string().min(1, { message: "預約狀態必填" }),
-	wait_time: z.string().optional(),
+	wait_time: z.enum([
+		"<10min",
+		"<30min",
+		"<1hr",
+		"<2hr",
+		">2hr",
+	]).optional(),
 	ramen_items: z
 		.array(
 			z.object({
@@ -76,6 +82,9 @@ export const reviewSchema = z.object({
 	payment_method: z.array(
 		z.enum(["現金", "QR決済", "交通系IC", "クレジットカード"]),
 	),
+	nearest_station_name: z.string().nullable().optional(),
+	nearest_station_walking_time_minutes: z.number().nullable().optional(),
+	nearest_station_distance_meters: z.number().nullable().optional(),
 });
 
 export type ReviewFormData = z.infer<typeof reviewSchema>;

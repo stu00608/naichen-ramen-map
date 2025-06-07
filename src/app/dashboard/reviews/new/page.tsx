@@ -45,6 +45,7 @@ import {
 	ORDER_METHOD_OPTIONS,
 	PAYMENT_METHOD_OPTIONS,
 	RESERVATION_TYPES,
+	WAIT_TIME_OPTIONS,
 } from "@/constants";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -70,11 +71,33 @@ import {
 	query,
 	where,
 } from "firebase/firestore";
+import { Timestamp } from "firebase/firestore";
 import { CalendarDays, Plus, Save, Search, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
+
+/**
+ * Recursively removes undefined values from an object.
+ * Useful before sending data to Firestore, which doesn't allow undefined.
+ */
+function removeUndefined<T extends object>(obj: T): T {
+	const newObj: { [key: string]: any } = {};
+	for (const key in obj) {
+		if (obj.hasOwnProperty(key)) {
+			if (obj[key] !== undefined) {
+				// If it's an object and not null, recurse
+				if (typeof obj[key] === "object" && obj[key] !== null) {
+					newObj[key] = removeUndefined(obj[key]);
+				} else {
+					newObj[key] = obj[key];
+				}
+			}
+		}
+	}
+	return newObj as T;
+}
 
 export default function NewReviewPage() {
 	const router = useRouter();
@@ -412,34 +435,49 @@ export default function NewReviewPage() {
 	// Handle form submission
 	const onSubmit = async (data: ReviewFormData) => {
 		try {
+			const formattedData = formatFormDataForSubmission(data);
+
 			// Include selected nearest station data in submission
 			const selectedStation = nearestStations[selectedStationIdx];
-			const submitData = {
-				...data,
-				nearest_station_name: selectedStation?.name,
+			const submitDataForFirestore = {
+				...formattedData,
+				nearest_station_name: selectedStation?.name || null,
 				nearest_station_walking_time_minutes:
-					selectedStation?.walking_time_minutes,
-				nearest_station_distance_meters: selectedStation?.distance_meters,
+					selectedStation?.walking_time_minutes || null,
+				nearest_station_distance_meters:
+					selectedStation?.distance_meters || null,
 			};
 
-			// Fetch shop data for IG post
-			const shopDataForIG = submitData.shop_id
-				? await fetchShopData(submitData.shop_id)
+			// Fetch shop data for IG post (use original 'data' for date)
+			const shopDataForIG = data.shop_id
+				? await fetchShopData(data.shop_id)
 				: undefined;
 			const shopForIG = shopDataForIG || undefined;
 
 			// Generate IG post content
-			const igContent = generateIgPostContent(submitData, shopForIG);
+			const igContent = generateIgPostContent(
+				{
+					...data, // Use original data with Date objects
+					nearest_station_name: selectedStation?.name,
+					nearest_station_walking_time_minutes:
+						selectedStation?.walking_time_minutes,
+					nearest_station_distance_meters: selectedStation?.distance_meters,
+				},
+				shopForIG,
+			);
 
 			// Add create timestamp and ig_post_data
 			const finalSubmitData = {
-				...submitData,
-				created_at: new Date(), // Use new Date() for new document
-				updated_at: new Date(), // Use new Date() for new document
+				...submitDataForFirestore,
+				created_at: Timestamp.now(), // Use new Date() for new document
+				updated_at: Timestamp.now(), // Use new Date() for new document
 				ig_post_data: { content: igContent },
 			};
 
-			const docRef = await addDocument(finalSubmitData);
+			// Clean up undefined values before sending to Firestore
+			const cleanedData = removeUndefined(finalSubmitData);
+
+			const docRef = await addDocument(cleanedData);
 			if (docRef) {
 				toast.success("評價已成功建立！");
 				router.push("/dashboard/reviews");
@@ -829,15 +867,26 @@ export default function NewReviewPage() {
 											render={({ field }) => (
 												<FormItem>
 													<FormLabel>等待時間</FormLabel>
-													<FormControl>
-														<Input
-															type="time"
-															onChange={field.onChange}
-															value={field.value}
-															step="60"
-														/>
-													</FormControl>
-													<FormDescription>小時:分鐘</FormDescription>
+													<Select
+														onValueChange={field.onChange}
+														value={field.value}
+													>
+														<FormControl>
+															<SelectTrigger className="w-full h-10">
+																<SelectValue placeholder="選擇等待時間" />
+															</SelectTrigger>
+														</FormControl>
+														<SelectContent>
+															{WAIT_TIME_OPTIONS.map((option) => (
+																<SelectItem
+																	key={option.value}
+																	value={option.value}
+																>
+																	{option.label}
+																</SelectItem>
+															))}
+														</SelectContent>
+													</Select>
 													<FormMessage />
 												</FormItem>
 											)}

@@ -312,6 +312,9 @@ const MultipleSelector = React.forwardRef<
 
 		const handleInputKeyDown = React.useCallback(
 			(e: React.KeyboardEvent<HTMLInputElement>) => {
+				// Avoid submitting the form on the first Enter key press when using IME
+				if (e.nativeEvent.isComposing) return;
+
 				if (e.key === "Enter" && inputValue.trim()) {
 					e.preventDefault();
 					if (createTag(inputValue)) {
