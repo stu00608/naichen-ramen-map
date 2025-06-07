@@ -3,6 +3,8 @@ import { generateSearchTokens } from "@/lib/utils";
 import { Tag } from "emblor";
 import { GeoPoint } from "firebase/firestore";
 import { z } from "zod";
+import { auth } from "@/lib/firebase";
+import { useAuth } from "@/contexts/auth-context";
 
 // Shared types
 export interface BusinessHourPeriod {
@@ -62,6 +64,8 @@ export interface GeocodingResult {
  * A hook that provides shared utilities for shop forms
  */
 export const useShopFormUtils = () => {
+	const { user } = useAuth();
+
 	// Default business hours setup
 	const getDefaultBusinessHours = () => {
 		return DAYS_OF_WEEK.reduce(
@@ -138,20 +142,32 @@ export const useShopFormUtils = () => {
 		address: string,
 		country: string,
 	): Promise<GeocodingResult> => {
+		if (!user) {
+			throw new Error("User not authenticated.");
+		}
+
 		try {
+			const idToken = await auth.currentUser?.getIdToken();
+
+			if (!idToken) {
+				throw new Error("Could not retrieve authentication token.");
+			}
+
 			const response = await fetch("/api/places/search", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
+					Authorization: `Bearer ${idToken}`,
 				},
 				body: JSON.stringify({ query: address, country }),
 			});
 
+			const data = await response.json();
+
 			if (!response.ok) {
-				throw new Error("地址搜尋失敗");
+				throw new Error(data.message || "地址搜尋失敗");
 			}
 
-			const data = await response.json();
 			if (Array.isArray(data.results) && data.results.length > 0) {
 				const firstResult = data.results[0];
 				return {
@@ -165,7 +181,7 @@ export const useShopFormUtils = () => {
 			}
 			throw new Error("找不到此地址的位置資訊");
 		} catch (err) {
-			throw new Error("地址搜尋失敗，請確認地址是否正確");
+			throw new Error(err instanceof Error ? err.message : "地址搜尋失敗，請確認地址是否正確");
 		}
 	};
 

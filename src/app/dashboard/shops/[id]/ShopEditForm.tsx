@@ -56,6 +56,8 @@ import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import { auth } from "@/lib/firebase";
+import { useAuth } from "@/contexts/auth-context";
 
 type StationError =
 	| string
@@ -115,6 +117,7 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 	const [selectedStationIdx, setSelectedStationIdx] = useState<number>(0);
 	const [stationLoading, setStationLoading] = useState(false);
 	const [stationError, setStationError] = useState<StationError | null>(null);
+	const { user } = useAuth();
 
 	const {
 		control,
@@ -266,30 +269,40 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 		try {
 			setIsSearching(true);
 
+			if (!user) {
+				setGeoError("User not authenticated.");
+				setIsSearching(false);
+				return;
+			}
+
+			const idToken = await auth.currentUser?.getIdToken();
+
+			if (!idToken) {
+				setGeoError("Could not retrieve authentication token.");
+				setIsSearching(false);
+				return;
+			}
+
 			const response = await fetch("/api/places/search", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
+					Authorization: `Bearer ${idToken}`,
 				},
 				body: JSON.stringify({ query: searchQuery, country: countryValue }),
 			});
 
+			const data = await response.json();
+
 			if (!response.ok) {
-				throw new Error("搜尋失敗");
+				throw new Error(data.message || "搜尋失敗");
 			}
 
-			const data = await response.json();
-			if (Array.isArray(data.results)) {
-				setSearchResults(data.results);
-				setShowPlacesResults(true);
-			} else {
-				setSearchResults([]);
-				toast.info("沒有找到符合的店家");
-			}
-		} catch (err) {
-			console.error("Places search error:", err);
+			setSearchResults(data.results);
+			setShowPlacesResults(true);
+		} catch (err: any) {
+			setGeoError(err.message || "搜尋失敗");
 			setSearchResults([]);
-			toast.error("搜尋店家時發生錯誤");
 		} finally {
 			setIsSearching(false);
 		}

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { auth } from "@/lib/firebase";
+import { useAuth } from "@/contexts/auth-context";
 
 interface Place {
 	id: string;
@@ -26,16 +28,32 @@ export function usePlacesSearch() {
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [results, setResults] = useState<Place[]>([]);
+	const { user } = useAuth();
 
 	const searchPlaces = async (query: string, country: string) => {
 		setLoading(true);
 		setError(null);
 
+		if (!user) {
+			setError("User not authenticated.");
+			setLoading(false);
+			return;
+		}
+
 		try {
+			const idToken = await auth.currentUser?.getIdToken();
+
+			if (!idToken) {
+				setError("Could not retrieve authentication token.");
+				setLoading(false);
+				return;
+			}
+
 			const response = await fetch("/api/places/search", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
+					Authorization: `Bearer ${idToken}`,
 				},
 				body: JSON.stringify({ query, country }),
 			});
