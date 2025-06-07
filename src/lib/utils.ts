@@ -96,6 +96,11 @@ function generatePrefectureTags(address: string): string {
 	return "";
 }
 
+// Helper to format numbers with commas
+function formatNumberWithCommas(num: number): string {
+	return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
 /**
  * Prepares shop data for search functionality
  * @param name Shop name
@@ -152,12 +157,12 @@ export function generateIgPostContent(
 	// 拉麵品項
 	const ramenLine =
 		review.ramen_items && review.ramen_items.length > 0
-			? `拉麵🍜：${review.ramen_items.map((item: any) => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}`
+			? `拉麵🍜：${review.ramen_items.map((item: any) => `${item.name}${item.price ? ` ¥${formatNumberWithCommas(item.price)}` : ""}`).join(", ")}`
 			: "";
 	// 配菜
 	const sideLine =
 		review.side_menu && review.side_menu.length > 0
-			? `配菜🍥：${review.side_menu.map((item: any) => `${item.name}${item.price ? ` ¥${item.price}` : ""}`).join(", ")}`
+			? `配菜🍥：${review.side_menu.map((item: any) => `${item.name}${item.price ? ` ¥${formatNumberWithCommas(item.price)}` : ""}`).join(", ")}`
 			: "";
 	// 點餐/付款
 	const orderLine = review.order_method
@@ -221,18 +226,30 @@ export function generateIgPostContent(
 					.join(" ")
 			: "";
 
+
+
 	// Add conditional tag based on overall score
 	let scoreTag = "";
-	if (review.overall_score > 3.5 && review.overall_score <= 4.0) {
+	if (review.overall_score >= 3.5 && review.overall_score < 4.0) {
 		scoreTag = "#好吃";
-	} else if (review.overall_score > 4.0 && review.overall_score <= 4.5) {
+	} else if (review.overall_score >= 4.0 && review.overall_score < 4.5) {
 		scoreTag = "#很好吃";
-	} else if (review.overall_score > 4.5 && review.overall_score <= 5.0) {
+	} else if (review.overall_score >= 4.5 && review.overall_score < 5.0) {
 		scoreTag = "#超好吃";
+	} else if (review.overall_score == 5.0) {
+		scoreTag = "#人生必吃";
 	}
 
 	// Combine existing tags and score tag
-	let finalTags = tags ? `${tags} ${scoreTag}`.trim() : scoreTag;
+	let finalTags = tags ? `${tags}`.trim() : "";
+
+	// Add shop tags
+	if (shop?.tags && shop.tags.length > 0) {
+		const shopFormattedTags = shop.tags
+			.map((t: string) => (t.startsWith("#") ? t : `#${t}`))
+			.join(" ");
+		finalTags = finalTags ? `${finalTags} ${shopFormattedTags}`.trim() : shopFormattedTags;
+	}
 
 	// Add ramen type hashtags
 	if (review.ramen_items && review.ramen_items.length > 0) {
@@ -242,9 +259,9 @@ export function generateIgPostContent(
 			}
 		});
 	}
-
-	finalTags = finalTags.trim();
+	
+	finalTags = tags ? `${tags} ${scoreTag}`.trim() : scoreTag;
 
 	// Compose
-	return `${title ? `${title}\n` : ""}${shopTag}\n${stationLine ? `${stationLine}\n` : ""}\n${ramenLine ? `${ramenLine}\n` : ""}${sideLine ? `${sideLine}\n` : ""}${orderLine ? `${orderLine}\n` : ""}${prefLine ? `${prefLine}\n` : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n${address ? `🗾：${address}\n` : ""}🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #ラーメン #ラーメン好き #奶辰吃拉麵 #日本拉麵 #日本美食 #日本旅遊 ${prefectureTags ? `${prefectureTags} ` : ""}${finalTags}`;
+	return `${title ? `${title}\n` : ""}${shopTag}\n${stationLine ? `${stationLine}\n` : ""}\n${ramenLine ? `${ramenLine}\n` : ""}${sideLine ? `${sideLine}\n` : ""}${orderLine ? `${orderLine}\n` : ""}${prefLine ? `${prefLine}\n` : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n${address ? `🗾：${address}\n` : ""}🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #ラーメン #ラーメン好き #奶辰吃拉麵 #日本拉麵 #日本美食 #日本旅遊 ${prefectureTags ? `${prefectureTags}` : ""} ${finalTags}`;
 }

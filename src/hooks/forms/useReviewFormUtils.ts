@@ -14,6 +14,7 @@ export interface ShopData {
 	googleMapsUri?: string;
 	googlePlaceId?: string;
 	location?: GeoPoint;
+	tags?: string[];
 	// Add other fields as needed
 }
 
@@ -118,6 +119,7 @@ export function useReviewFormUtils() {
 				shop_types: typedShopData.shop_types,
 				googleMapsUri: typedShopData.googleMapsUri,
 				location: typedShopData.location,
+				tags: typedShopData.tags,
 			};
 		} catch (error) {
 			console.error("Error fetching shop data:", error);
