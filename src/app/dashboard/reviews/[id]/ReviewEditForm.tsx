@@ -425,7 +425,7 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 								latitude: shopData.location.latitude,
 								longitude: shopData.location.longitude,
 								country: shopData.country,
-								destinationPlaceId: shopData.google_place_id,
+								destinationPlaceId: shopData.googlePlaceId,
 							}),
 						});
 						if (!res.ok) {

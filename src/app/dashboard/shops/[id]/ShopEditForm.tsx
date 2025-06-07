@@ -136,7 +136,7 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 			tags: [],
 			business_hours: getDefaultBusinessHours(),
 			closed_days: [],
-			google_place_id: "",
+			googlePlaceId: "",
 		},
 	});
 
@@ -180,7 +180,7 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 						tags: shop.tags || [], // Use string array directly
 						business_hours: shop.business_hours || getDefaultBusinessHours(),
 						closed_days: [],
-						google_place_id: shop.google_place_id,
+						googlePlaceId: shop.googlePlaceId,
 					});
 					setSelectedCountry(shop.country as keyof typeof REGIONS);
 					locationRef.current = shop.location;
@@ -190,7 +190,7 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 
 					// Set the selected place to show in the preview card
 					const transformedPlace = {
-						id: shop.google_place_id || "",
+						id: shop.googlePlaceId || "",
 						name: shop.name,
 						address: shop.address,
 						country: shop.country,
@@ -328,7 +328,7 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 		}
 
 		setValue("address", cleanAddress);
-		setValue("google_place_id", place.id);
+		setValue("googlePlaceId", place.id);
 
 		if (place.currentOpeningHours?.periods) {
 			const dayMap = [
@@ -440,7 +440,7 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 		setSelectedPlace(null);
 		setValue("name", "");
 		setValue("address", "");
-		setValue("google_place_id", "");
+		setValue("googlePlaceId", "");
 		setSearchQuery("");
 		toast.info("已取消店家選擇");
 	};
@@ -450,9 +450,9 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 			setIsSubmitting(true);
 			setGeoError(null);
 
-			if (data.google_place_id) {
+			if (data.googlePlaceId) {
 				const validationResult = await validateGooglePlaceId(
-					data.google_place_id,
+					data.googlePlaceId,
 				);
 				if (typeof validationResult === "string") {
 					setGeoError(validationResult);
@@ -467,8 +467,8 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 				try {
 					const geoResult = await geocodeAddress(data.address, data.country);
 					locationRef.current = geoResult.location;
-					if (geoResult.google_place_id) {
-						data.google_place_id = geoResult.google_place_id;
+					if (geoResult.googlePlaceId) {
+						data.googlePlaceId = geoResult.googlePlaceId;
 					}
 					googleMapsUriRef.current = geoResult.googleMapsUri || null;
 				} catch (err: any) {
@@ -579,7 +579,7 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 			tags: [],
 			business_hours: getDefaultBusinessHours(),
 			closed_days: [],
-			google_place_id: "",
+			googlePlaceId: "",
 		});
 
 		setSelectedCountry("JP");

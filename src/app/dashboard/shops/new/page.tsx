@@ -113,7 +113,7 @@ export default function NewShopPage() {
 			tags: [],
 			business_hours: getDefaultBusinessHours(),
 			closed_days: [],
-			google_place_id: "",
+			googlePlaceId: "",
 		},
 	});
 
@@ -281,7 +281,7 @@ export default function NewShopPage() {
 		// Check if this Google Place ID is already registered
 		if (place.id) {
 			try {
-				const exists = await checkDocumentExists("google_place_id", place.id);
+				const exists = await checkDocumentExists("googlePlaceId", place.id);
 				if (exists) {
 					toast.error("此店家已經在資料庫中註冊了");
 					return;
@@ -313,7 +313,7 @@ export default function NewShopPage() {
 		}
 
 		setValue("address", cleanAddress);
-		setValue("google_place_id", place.id);
+		setValue("googlePlaceId", place.id);
 
 		if (place.currentOpeningHours?.periods) {
 			const dayMap = [
@@ -428,7 +428,7 @@ export default function NewShopPage() {
 		setSelectedPlace(null);
 		setValue("name", "");
 		setValue("address", "");
-		setValue("google_place_id", "");
+		setValue("googlePlaceId", "");
 		setSearchQuery("");
 		toast.info("已取消店家選擇");
 	};
@@ -437,9 +437,9 @@ export default function NewShopPage() {
 		try {
 			setGeoError(null);
 
-			if (data.google_place_id) {
+			if (data.googlePlaceId) {
 				const validationResult = await validateGooglePlaceId(
-					data.google_place_id,
+					data.googlePlaceId,
 				);
 				if (typeof validationResult === "string") {
 					setGeoError(validationResult);
@@ -453,8 +453,8 @@ export default function NewShopPage() {
 				try {
 					const geoResult = await geocodeAddress(data.address, data.country);
 					locationRef.current = geoResult.location;
-					if (geoResult.google_place_id) {
-						data.google_place_id = geoResult.google_place_id;
+					if (geoResult.googlePlaceId) {
+						data.googlePlaceId = geoResult.googlePlaceId;
 					}
 					googleMapsUriRef.current = geoResult.googleMapsUri || null;
 				} catch (err: any) {
@@ -547,7 +547,7 @@ export default function NewShopPage() {
 		setValue("country", "JP");
 		setValue("region", "");
 		setValue("address", "");
-		setValue("google_place_id", "");
+		setValue("googlePlaceId", "");
 		setValue("shop_types", []);
 		setValue("tags", []);
 		setValue("business_hours", defaultBusinessHours);

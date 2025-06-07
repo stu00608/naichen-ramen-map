@@ -68,7 +68,16 @@ import {
 	where,
 } from "firebase/firestore";
 import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
-import { Edit, Plus, Search, Settings2, Star, Trash2, X, Instagram } from "lucide-react";
+import {
+	Edit,
+	Instagram,
+	Plus,
+	Search,
+	Settings2,
+	Star,
+	Trash2,
+	X,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -647,7 +656,7 @@ export default function ReviewsPage() {
 												className="text-pink-500 hover:text-pink-600"
 												title="複製 IG 內容"
 												onClick={async () => {
-													let igContent = review.ig_post_data?.content;
+													const igContent = review.ig_post_data?.content;
 													if (igContent) {
 														await copyToClipboard(igContent);
 													} else {

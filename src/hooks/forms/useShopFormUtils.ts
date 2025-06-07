@@ -23,7 +23,7 @@ export const shopSchema = z.object({
 	region: z.string().min(1, "請選擇區域"),
 	shop_types: z.array(z.string()).min(1, "請選擇至少一種拉麵類型"),
 	tags: z.array(z.string()).default([]),
-	google_place_id: z.string().optional(),
+	googlePlaceId: z.string().optional(),
 	business_hours: z.record(
 		z.object({
 			periods: z.array(
@@ -44,7 +44,7 @@ export interface ShopFormData {
 	country: string;
 	region: string;
 	address: string;
-	google_place_id?: string;
+	googlePlaceId?: string;
 	shop_types: string[];
 	tags: string[];
 	business_hours: Record<string, DaySchedule>;
@@ -54,7 +54,7 @@ export interface ShopFormData {
 // Add this interface at the top with other interfaces
 export interface GeocodingResult {
 	location: GeoPoint;
-	google_place_id: string | null;
+	googlePlaceId: string | null;
 	googleMapsUri?: string;
 }
 
@@ -86,7 +86,7 @@ export const useShopFormUtils = () => {
 			country: data.country,
 			region: data.region,
 			address: data.address,
-			google_place_id: data.google_place_id || null,
+			googlePlaceId: data.googlePlaceId || null,
 			shop_types: data.shop_types || [],
 			tags: data.tags || [], // Update to use the string array directly
 			business_hours: excludeBusinessHours ? null : data.business_hours,
@@ -159,7 +159,7 @@ export const useShopFormUtils = () => {
 						firstResult.location.latitude,
 						firstResult.location.longitude,
 					),
-					google_place_id: firstResult.id,
+					googlePlaceId: firstResult.id,
 					googleMapsUri: firstResult.googleMapsUri,
 				};
 			}

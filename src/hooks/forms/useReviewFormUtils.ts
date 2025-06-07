@@ -12,7 +12,7 @@ export interface ShopData {
 	address?: string;
 	shop_types?: string[];
 	googleMapsUri?: string;
-	google_place_id?: string;
+	googlePlaceId?: string;
 	location?: GeoPoint;
 	// Add other fields as needed
 }

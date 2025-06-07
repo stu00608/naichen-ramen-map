@@ -301,7 +301,7 @@ export default function NewReviewPage() {
 								latitude: shopData.location.latitude,
 								longitude: shopData.location.longitude,
 								country: shopData.country,
-								destinationPlaceId: shopData.google_place_id,
+								destinationPlaceId: shopData.googlePlaceId,
 							}),
 						});
 						if (!res.ok) {
