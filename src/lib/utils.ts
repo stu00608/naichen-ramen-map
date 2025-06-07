@@ -4,6 +4,7 @@ import type { Review } from "@/types";
 import type { StationError } from "@/types";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { RAMEN_HASHTAGS } from "@/constants";
 
 export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
@@ -198,7 +199,18 @@ export function generateIgPostContent(
 	}
 
 	// Combine existing tags and score tag
-	const finalTags = tags ? `${tags} ${scoreTag}`.trim() : scoreTag;
+	let finalTags = tags ? `${tags} ${scoreTag}`.trim() : scoreTag;
+
+	// Add ramen type hashtags
+	if (review.ramen_items && review.ramen_items.length > 0) {
+		review.ramen_items.forEach((item: any) => {
+			if (item.type && RAMEN_HASHTAGS[item.type as keyof typeof RAMEN_HASHTAGS]) {
+				finalTags += ` ${RAMEN_HASHTAGS[item.type as keyof typeof RAMEN_HASHTAGS]}`;
+			}
+		});
+	}
+
+	finalTags = finalTags.trim();
 
 	// Compose
 	return `${title ? `${title}\n` : ""}${shopTag}\n${stationLine ? `${stationLine}\n` : ""}\n${ramenLine ? `${ramenLine}\n` : ""}${sideLine ? `${sideLine}\n` : ""}${orderLine ? `${orderLine}\n` : ""}${prefLine ? `${prefLine}\n` : ""}・････━━━━━━━━━━━････・\n\n${notesBlock}\n\n・････━━━━━━━━━━━････・\n${address ? `🗾：${address}\n` : ""}🗓️：${dateStr} / ${timeStr}入店 / ${people}人${reservationType}\n・････━━━━━━━━━━━････・\n#在日台灣人 #ラーメン #ラーメン好き #奶辰吃拉麵 #日本拉麵 #日本美食 #日本旅遊 ${finalTags}`;
