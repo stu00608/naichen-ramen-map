@@ -419,9 +419,26 @@ export default function ShopEditForm({ shopId }: ShopEditFormProps) {
 		if (place.location?.latitude && place.location?.longitude) {
 			setStationLoading(true);
 			try {
+				if (!user) {
+					setGeoError("User not authenticated.");
+					setIsSearching(false);
+					return;
+				}
+
+				const idToken = await auth.currentUser?.getIdToken();
+
+				if (!idToken) {
+					setGeoError("Could not retrieve authentication token.");
+					setIsSearching(false);
+					return;
+				}
+
 				const res = await fetch("/api/places/nearest-station", {
 					method: "POST",
-					headers: { "Content-Type": "application/json" },
+					headers: { 
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${idToken}`,
+					 },
 					body: JSON.stringify({
 						latitude: place.location.latitude,
 						longitude: place.location.longitude,

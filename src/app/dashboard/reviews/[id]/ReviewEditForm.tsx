@@ -68,7 +68,7 @@ import {
 import type { ShopData } from "@/hooks/forms/useReviewFormUtils";
 import { useFirestore } from "@/hooks/useFirestore";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
 import { generateIgPostContent } from "@/lib/utils";
 import type { Review } from "@/types";
@@ -418,9 +418,25 @@ export default function ReviewEditForm({ reviewId }: ReviewEditFormProps) {
 					setSelectedStationIdx(0);
 					setStationError(null);
 					try {
+						if (!user) {
+							setIsSearching(false);
+							return;
+						}
+
+						const idToken = await auth.currentUser?.getIdToken();
+
+						if (!idToken) {
+							setIsSearching(false);
+							return;
+						}
+
+
 						const res = await fetch("/api/places/nearest-station", {
 							method: "POST",
-							headers: { "Content-Type": "application/json" },
+							headers: { 
+								"Content-Type": "application/json",
+								Authorization: `Bearer ${idToken}`
+							},
 							body: JSON.stringify({
 								latitude: shopData.location.latitude,
 								longitude: shopData.location.longitude,
