@@ -68,7 +68,6 @@ import {
 	where,
 } from "firebase/firestore";
 import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
-import { Timestamp } from "firebase/firestore";
 import {
 	Edit,
 	Instagram,
@@ -86,9 +85,21 @@ import { toast } from "sonner";
 
 // Helper to safely convert Firestore Timestamp to Date
 function safeToDate(timestamp: any): Date {
-	return timestamp && typeof timestamp.toDate === "function"
-		? timestamp.toDate()
-		: new Date(); // Fallback to a new Date if not a valid Timestamp
+	// If it's a Firestore Timestamp object, convert it
+	if (timestamp && typeof timestamp.toDate === "function") {
+		return timestamp.toDate();
+	}
+	// If it's a plain object with seconds and nanoseconds, convert it
+	if (
+		timestamp &&
+		typeof timestamp === "object" &&
+		typeof timestamp.seconds === "number" &&
+		typeof timestamp.nanoseconds === "number"
+	) {
+		return new Date(timestamp.seconds * 1000 + timestamp.nanoseconds / 1000000);
+	}
+	// Fallback to a new Date if not a valid Timestamp or object
+	return new Date();
 }
 
 // Helper to safely convert raw data to RamenItem array
